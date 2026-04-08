@@ -28,6 +28,10 @@ class DynamicPartitionRuntime:
         self.print_every = max(0, int(print_every))
 
     def _print_progress(self, processed: int, metrics: RequestMetrics) -> None:
+        client_ms = metrics.client_processing_time * 1000.0
+        transfer_ms = metrics.transfer_time * 1000.0
+        server_ms = metrics.server_processing_time * 1000.0 if metrics.server_processing_time is not None else None
+        e2e_ms = metrics.e2e_latency * 1000.0
         print(
             "[client] "
             f"processed={processed} "
@@ -35,10 +39,10 @@ class DynamicPartitionRuntime:
             f"mode={metrics.mode} "
             f"model={metrics.model_name} "
             f"partition={metrics.partition_point or 'full'} "
-            f"client={metrics.client_processing_time:.4f}s "
-            f"transfer={metrics.transfer_time:.4f}s "
-            f"server={(f'{metrics.server_processing_time:.4f}s' if metrics.server_processing_time is not None else 'n/a')} "
-            f"e2e={metrics.e2e_latency:.4f}s"
+            f"client={client_ms:.2f}ms "
+            f"transfer={transfer_ms:.2f}ms "
+            f"server={(f'{server_ms:.2f}ms' if server_ms is not None else 'n/a')} "
+            f"e2e={e2e_ms:.2f}ms"
         )
 
     def run(self, max_requests=None) -> None:
