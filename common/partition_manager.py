@@ -90,12 +90,15 @@ class PartitionManager:
                 stage = getattr(model, stage_name)
                 for block_index, block in enumerate(stage):
                     specs.append(PartitionSpec(f"{stage_name}.{block_index}", block))
-            specs.extend(
-                [
-                    PartitionSpec("avgpool", model.avgpool),
-                    PartitionSpec("flatten", nn.Flatten(1)),
-                    PartitionSpec("fc", model.fc),
-                ]
+            specs.append(
+                PartitionSpec(
+                    "head",
+                    nn.Sequential(
+                        model.avgpool,
+                        nn.Flatten(1),
+                        model.fc,
+                    ),
+                )
             )
             return specs
 
