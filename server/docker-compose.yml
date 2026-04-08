@@ -9,7 +9,7 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
     volumes:
-      - ./model_repo:/models
+      - ./dynamic_model_repo:/models
     command: >
       tritonserver
       --model-repository=/models
