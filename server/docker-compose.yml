@@ -1,0 +1,28 @@
+services:
+  tritonserver:
+    image: nvcr.io/nvidia/tritonserver:26.01-py3-igpu
+    container_name: dnn-partition-triton
+    runtime: nvidia
+    network_mode: host
+    shm_size: 1g
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    volumes:
+      - ./model_repo:/models
+    command: >
+      tritonserver
+      --model-repository=/models
+      --allow-grpc=true
+      --grpc-port=8001
+      --allow-http=true
+      --http-port=8000
+      --allow-metrics=true
+      --metrics-port=8002
+      --model-control-mode=none
+      --log-verbose=0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/v2/health/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
