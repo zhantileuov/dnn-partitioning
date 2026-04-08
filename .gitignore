@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.pyo
+
+.idea/
+.venv/
+.ipynb_checkpoints/
+
+artifacts/
+server/dynamic_model_repo/
+
+*.log
