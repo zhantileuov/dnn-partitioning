@@ -28,7 +28,8 @@ It uses the exact valid partition boundaries already established for those model
   - `video_source.py`: looping video reader
   - `local_executor.py`: preprocessing + local full/prefix execution
   - `triton_client.py`: Triton gRPC wrapper
-  - `scheduler.py`: in-process schedulers
+  - `scheduler.py`: in-process schedulers plus optional remote-controlled scheduler
+  - `remote_control.py`: UDP command sender for switching client mode live from a third machine
   - `runtime_selector.py`: resolves `(mode, model_name, partition_point)` into executable plans
   - `metrics.py`: CSV logging
   - `runtime.py`: continuous inference loop over video frames
@@ -82,6 +83,24 @@ runtime = DynamicPartitionRuntime(
 )
 runtime.run(max_requests=100)
 ```
+
+## Remote Dynamic Control
+
+Start the client with a control port so it keeps running and listens for live mode updates on a background thread:
+
+```powershell
+python -m dnn_partition.client.main --mode full_local --model resnet18 --video assets/videos/input.mp4 --triton-url 127.0.0.1:8001 --control-host 0.0.0.0 --control-port 5055
+```
+
+From a third machine, send commands to switch the running client without restarting it:
+
+```powershell
+python -m dnn_partition.client.remote_control --host 192.168.1.50 --port 5055 --mode split --model resnet18 --partition-point layer2.0
+python -m dnn_partition.client.remote_control --host 192.168.1.50 --port 5055 --mode full_server --model resnet18
+python -m dnn_partition.client.remote_control --host 192.168.1.50 --port 5055 --mode full_local --model resnet18
+```
+
+The client applies the latest valid command on the next frame. Invalid commands are ignored and the current mode keeps running.
 
 ## Self-contained assets
 

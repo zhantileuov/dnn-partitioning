@@ -8,7 +8,7 @@ from .local_executor import LocalExecutor
 from .metrics import CsvMetricsLogger
 from .runtime import DynamicPartitionRuntime
 from .runtime_selector import ClientRuntimeSelector
-from .scheduler import StaticScheduler
+from .scheduler import RemoteControlledScheduler, SchedulerDecision, StaticScheduler
 from .triton_client import TritonRequestClient
 from .video_source import LoopingVideoFrameSource
 
@@ -30,6 +30,17 @@ def parse_args() -> argparse.Namespace:
         default=5,
         help="Print a short runtime summary every N processed requests. Use 0 to disable.",
     )
+    parser.add_argument(
+        "--control-host",
+        default=None,
+        help="Bind address for remote control commands. If set together with --control-port, the client listens for live updates.",
+    )
+    parser.add_argument(
+        "--control-port",
+        type=int,
+        default=None,
+        help="UDP port for remote control commands from another machine.",
+    )
     return parser.parse_args()
 
 
@@ -46,27 +57,45 @@ def main() -> None:
         metrics_path = root / metrics_path
 
     partition_manager = PartitionManager()
-    scheduler = StaticScheduler(
+    initial_decision = SchedulerDecision(
         mode=args.mode,
         model_name=args.model,
         partition_point=args.partition_point,
     )
-    selector = ClientRuntimeSelector(partition_manager, scheduler)
-    local_executor = LocalExecutor(partition_manager, device=args.device)
-    metrics_logger = CsvMetricsLogger(metrics_path)
-    triton_client = None
-    if args.mode in ("full_server", "split"):
+    if args.control_host is not None or args.control_port is not None:
+        scheduler = RemoteControlledScheduler(
+            initial_decision=initial_decision,
+            valid_models=partition_manager.list_models(),
+            partition_provider=partition_manager.list_partition_points,
+            host=args.control_host or "0.0.0.0",
+            port=args.control_port or 5055,
+        )
+        scheduler.start()
+    else:
+        scheduler = StaticScheduler(
+            mode=args.mode,
+            model_name=args.model,
+            partition_point=args.partition_point,
+        )
+
+    try:
+        selector = ClientRuntimeSelector(partition_manager, scheduler)
+        local_executor = LocalExecutor(partition_manager, device=args.device)
+        metrics_logger = CsvMetricsLogger(metrics_path)
         triton_client = TritonRequestClient(args.triton_url)
 
-    runtime = DynamicPartitionRuntime(
-        video_source=LoopingVideoFrameSource(video_path),
-        selector=selector,
-        local_executor=local_executor,
-        metrics_logger=metrics_logger,
-        triton_client=triton_client,
-        print_every=args.print_every,
-    )
-    runtime.run(max_requests=args.max_requests)
+        runtime = DynamicPartitionRuntime(
+            video_source=LoopingVideoFrameSource(video_path),
+            selector=selector,
+            local_executor=local_executor,
+            metrics_logger=metrics_logger,
+            triton_client=triton_client,
+            print_every=args.print_every,
+        )
+        runtime.run(max_requests=args.max_requests)
+    finally:
+        if isinstance(scheduler, RemoteControlledScheduler):
+            scheduler.stop()
 
 
 if __name__ == "__main__":
