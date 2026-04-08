@@ -1,0 +1,34 @@
+from dataclasses import dataclass
+from typing import Optional
+
+import torch.nn as nn
+
+
+@dataclass(frozen=True)
+class PartitionSpec:
+    name: str
+    module: nn.Module
+
+
+@dataclass(frozen=True)
+class ExecutionPlan:
+    mode: str
+    model_name: str
+    partition_point: Optional[str]
+    triton_model_name: Optional[str]
+
+
+@dataclass
+class RequestMetrics:
+    request_id: str
+    timestamp: float
+    frame_id: int
+    model_name: str
+    partition_point: Optional[str]
+    mode: str
+    client_processing_time: float
+    transfer_time: float
+    server_processing_time: Optional[float]
+    e2e_latency: float
+    bytes_sent: int
+    bytes_received: int
