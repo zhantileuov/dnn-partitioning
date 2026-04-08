@@ -18,12 +18,28 @@ class DynamicPartitionRuntime:
         local_executor: LocalExecutor,
         metrics_logger: CsvMetricsLogger,
         triton_client=None,
+        print_every: int = 0,
     ):
         self.video_source = video_source
         self.selector = selector
         self.local_executor = local_executor
         self.metrics_logger = metrics_logger
         self.triton_client = triton_client
+        self.print_every = max(0, int(print_every))
+
+    def _print_progress(self, processed: int, metrics: RequestMetrics) -> None:
+        print(
+            "[client] "
+            f"processed={processed} "
+            f"frame_id={metrics.frame_id} "
+            f"mode={metrics.mode} "
+            f"model={metrics.model_name} "
+            f"partition={metrics.partition_point or 'full'} "
+            f"client={metrics.client_processing_time:.4f}s "
+            f"transfer={metrics.transfer_time:.4f}s "
+            f"server={(f'{metrics.server_processing_time:.4f}s' if metrics.server_processing_time is not None else 'n/a')} "
+            f"e2e={metrics.e2e_latency:.4f}s"
+        )
 
     def run(self, max_requests=None) -> None:
         self.video_source.open()
@@ -87,5 +103,7 @@ class DynamicPartitionRuntime:
                 self.metrics_logger.log(metrics)
                 last_metrics = metrics
                 processed += 1
+                if self.print_every and processed % self.print_every == 0:
+                    self._print_progress(processed, metrics)
         finally:
             self.video_source.close()

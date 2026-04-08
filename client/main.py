@@ -24,6 +24,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--triton-url", default=defaults.triton_url)
     parser.add_argument("--max-requests", type=int, default=defaults.max_requests)
     parser.add_argument("--device", default=None, help="Torch device override, e.g. cpu or cuda.")
+    parser.add_argument(
+        "--print-every",
+        type=int,
+        default=5,
+        help="Print a short runtime summary every N processed requests. Use 0 to disable.",
+    )
     return parser.parse_args()
 
 
@@ -58,6 +64,7 @@ def main() -> None:
         local_executor=local_executor,
         metrics_logger=metrics_logger,
         triton_client=triton_client,
+        print_every=args.print_every,
     )
     runtime.run(max_requests=args.max_requests)
 
