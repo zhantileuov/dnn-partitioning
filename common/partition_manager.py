@@ -76,10 +76,15 @@ class PartitionManager:
 
         if canonical_name in ("resnet18", "resnet50"):
             specs: list[PartitionSpec] = [
-                PartitionSpec("conv1", model.conv1),
-                PartitionSpec("bn1", model.bn1),
-                PartitionSpec("relu", model.relu),
-                PartitionSpec("maxpool", model.maxpool),
+                PartitionSpec(
+                    "stem",
+                    nn.Sequential(
+                        model.conv1,
+                        model.bn1,
+                        model.relu,
+                        model.maxpool,
+                    ),
+                ),
             ]
             for stage_name in ("layer1", "layer2", "layer3", "layer4"):
                 stage = getattr(model, stage_name)
