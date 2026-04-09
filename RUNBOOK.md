@@ -49,6 +49,11 @@ Client defaults can be overridden with:
 - `DNN_PARTITION_TRITON_URL`
 - `DNN_PARTITION_VIDEO_PATH`
 - `DNN_PARTITION_METRICS_CSV`
+- `DNN_PARTITION_METRICS_SINK`
+- `DNN_PARTITION_KAFKA_BOOTSTRAP_SERVERS`
+- `DNN_PARTITION_KAFKA_TOPIC`
+- `DNN_PARTITION_KAFKA_CLIENT_ID`
+- `DNN_PARTITION_KAFKA_QUEUE_SIZE`
 - `DNN_PARTITION_MODE`
 - `DNN_PARTITION_MODEL`
 - `DNN_PARTITION_PARTITION_POINT`
@@ -60,6 +65,8 @@ PowerShell example:
 $env:DNN_PARTITION_TRITON_URL = "172.22.231.61:8001"
 $env:DNN_PARTITION_MODE = "full_server"
 $env:DNN_PARTITION_MODEL = "resnet18"
+$env:DNN_PARTITION_METRICS_SINK = "kafka"
+$env:DNN_PARTITION_KAFKA_BOOTSTRAP_SERVERS = "127.0.0.1:9092"
 python -m dnn_partition.client.main
 ```
 
@@ -69,8 +76,33 @@ Linux example:
 export DNN_PARTITION_TRITON_URL=172.22.231.61:8001
 export DNN_PARTITION_MODE=full_server
 export DNN_PARTITION_MODEL=resnet18
+export DNN_PARTITION_METRICS_SINK=kafka
+export DNN_PARTITION_KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:9092
 python3 -m dnn_partition.client.main
 ```
+
+## Local Observability Stack
+
+Run this once on the current machine to start Kafka, Kafka UI, Prometheus, and Grafana:
+
+```powershell
+cd observability
+docker compose up -d
+```
+
+Services:
+
+- Kafka: `localhost:9092`
+- Kafka UI: `http://localhost:8080`
+- Prometheus: `http://localhost:9090`
+- Grafana: `http://localhost:3000`
+
+Grafana credentials:
+
+- user: `admin`
+- password: `admin`
+
+The compose stack creates the Kafka topic `dnn_partition.metrics`.
 
 ## Server Setup
 
@@ -278,6 +310,41 @@ Check CSV on Windows:
 Get-Content dnn_partition\artifacts\logs\metrics.csv -Tail 5
 ```
 
+Kafka only:
+
+```powershell
+python -m dnn_partition.client.main `
+  --metrics-sink kafka `
+  --kafka-bootstrap-servers 127.0.0.1:9092 `
+  --kafka-topic dnn_partition.metrics `
+  --mode split `
+  --model resnet18 `
+  --partition-point layer2.0 `
+  --video assets/videos/input.mp4
+```
+
+CSV and Kafka together:
+
+```powershell
+python -m dnn_partition.client.main `
+  --metrics-sink both `
+  --metrics-csv artifacts/logs/metrics.csv `
+  --kafka-bootstrap-servers 127.0.0.1:9092 `
+  --kafka-topic dnn_partition.metrics `
+  --mode split `
+  --model resnet18 `
+  --partition-point layer2.0 `
+  --video assets/videos/input.mp4
+```
+
+No metrics sink:
+
+```powershell
+python -m dnn_partition.client.main --metrics-sink none
+```
+
+The Kafka publisher uses a background thread and bounded queue, so metric publishing does not block the inference loop. If the queue fills, the client drops excess metrics and prints a warning instead of slowing inference.
+
 ## Triton-side Statistics
 
 ```bash
@@ -286,6 +353,8 @@ curl http://localhost:8000/v2/models/resnet18_full/stats
 curl http://localhost:8000/v2/models/resnet18_tail_after_layer2_0/stats
 curl http://localhost:8002/metrics
 ```
+
+Prometheus in the observability stack scrapes Triton from `host.docker.internal:8002`. If your Triton server runs elsewhere, update `observability/prometheus/prometheus.yml`.
 
 ## Split Execution Logic
 

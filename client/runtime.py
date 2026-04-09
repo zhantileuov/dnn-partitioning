@@ -4,7 +4,7 @@ import uuid
 from dnn_partition.common.types import RequestMetrics
 
 from .local_executor import LocalExecutor
-from .metrics import CsvMetricsLogger
+from .metrics import MetricsLogger
 from .runtime_selector import ClientRuntimeSelector
 from .triton_client import TritonRequestClient
 from .video_source import LoopingVideoFrameSource
@@ -16,7 +16,7 @@ class DynamicPartitionRuntime:
         video_source: LoopingVideoFrameSource,
         selector: ClientRuntimeSelector,
         local_executor: LocalExecutor,
-        metrics_logger: CsvMetricsLogger,
+        metrics_logger: MetricsLogger,
         triton_client=None,
         print_every: int = 0,
     ):

@@ -70,6 +70,11 @@ Client defaults can be overridden with:
 - `DNN_PARTITION_TRITON_URL`
 - `DNN_PARTITION_VIDEO_PATH`
 - `DNN_PARTITION_METRICS_CSV`
+- `DNN_PARTITION_METRICS_SINK`
+- `DNN_PARTITION_KAFKA_BOOTSTRAP_SERVERS`
+- `DNN_PARTITION_KAFKA_TOPIC`
+- `DNN_PARTITION_KAFKA_CLIENT_ID`
+- `DNN_PARTITION_KAFKA_QUEUE_SIZE`
 - `DNN_PARTITION_MODE`
 - `DNN_PARTITION_MODEL`
 - `DNN_PARTITION_PARTITION_POINT`
@@ -80,6 +85,8 @@ Client defaults can be overridden with:
 The client writes CSV metrics by default to:
 
 - `dnn_partition/artifacts/logs/metrics.csv`
+
+Kafka publishing can be enabled with `--metrics-sink kafka` or `--metrics-sink both`.
 
 Console progress output is printed every `--print-every N` requests.
 
@@ -94,6 +101,7 @@ Console progress output is printed every `--print-every N` requests.
 See [RUNBOOK.md](RUNBOOK.md) for:
 
 - full setup steps
+- local Kafka + Grafana setup
 - Triton export commands
 - client run modes
 - dynamic control examples

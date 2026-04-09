@@ -5,7 +5,7 @@ from dnn_partition.common.partition_manager import PartitionManager
 
 from .config import ClientConfig, default_project_root
 from .local_executor import LocalExecutor
-from .metrics import CsvMetricsLogger
+from .metrics import build_metrics_logger
 from .runtime import DynamicPartitionRuntime
 from .runtime_selector import ClientRuntimeSelector
 from .scheduler import RemoteControlledScheduler, SchedulerDecision, StaticScheduler
@@ -18,6 +18,25 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the dynamic DNN partitioning client runtime.")
     parser.add_argument("--video", default=defaults.video_path, help="Path to the input video.")
     parser.add_argument("--metrics-csv", default=defaults.metrics_csv, help="Path to the output metrics CSV.")
+    parser.add_argument(
+        "--metrics-sink",
+        default=defaults.metrics_sink,
+        choices=["csv", "kafka", "both", "none"],
+        help="Where to send request metrics.",
+    )
+    parser.add_argument(
+        "--kafka-bootstrap-servers",
+        default=defaults.kafka_bootstrap_servers,
+        help="Comma-separated Kafka bootstrap servers.",
+    )
+    parser.add_argument("--kafka-topic", default=defaults.kafka_topic, help="Kafka topic for request metrics.")
+    parser.add_argument("--kafka-client-id", default=defaults.kafka_client_id, help="Kafka client id.")
+    parser.add_argument(
+        "--kafka-queue-size",
+        type=int,
+        default=defaults.kafka_queue_size,
+        help="Maximum number of metrics buffered locally before Kafka send.",
+    )
     parser.add_argument("--mode", default=defaults.mode, choices=["full_local", "full_server", "split"])
     parser.add_argument("--model", default=defaults.model_name)
     parser.add_argument("--partition-point", default=defaults.partition_point)
@@ -56,6 +75,7 @@ def main() -> None:
     if not metrics_path.is_absolute():
         metrics_path = root / metrics_path
 
+    metrics_logger = None
     partition_manager = PartitionManager()
     initial_decision = SchedulerDecision(
         mode=args.mode,
@@ -81,7 +101,14 @@ def main() -> None:
     try:
         selector = ClientRuntimeSelector(partition_manager, scheduler)
         local_executor = LocalExecutor(partition_manager, device=args.device)
-        metrics_logger = CsvMetricsLogger(metrics_path)
+        metrics_logger = build_metrics_logger(
+            sink=args.metrics_sink,
+            csv_path=metrics_path,
+            kafka_bootstrap_servers=args.kafka_bootstrap_servers,
+            kafka_topic=args.kafka_topic,
+            kafka_client_id=args.kafka_client_id,
+            kafka_queue_size=args.kafka_queue_size,
+        )
         triton_client = TritonRequestClient(args.triton_url)
 
         runtime = DynamicPartitionRuntime(
@@ -94,6 +121,8 @@ def main() -> None:
         )
         runtime.run(max_requests=args.max_requests)
     finally:
+        if metrics_logger is not None:
+            metrics_logger.close()
         if isinstance(scheduler, RemoteControlledScheduler):
             scheduler.stop()
 
