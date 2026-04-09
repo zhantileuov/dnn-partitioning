@@ -71,3 +71,10 @@ queue_size = 1000
 # Leave empty to disable remote control.
 host = ""
 port = 0
+
+[jetson]
+# Enable background jtop sampling on Jetson devices.
+telemetry_enabled = true
+
+# How often to refresh the cached jtop snapshot.
+telemetry_interval_s = 1.0

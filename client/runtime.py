@@ -3,6 +3,7 @@ import uuid
 
 from dnn_partition.common.types import RequestMetrics
 
+from .jetson_telemetry import NullJetsonTelemetry
 from .local_executor import LocalExecutor
 from .metrics import MetricsLogger
 from .runtime_selector import ClientRuntimeSelector
@@ -17,6 +18,7 @@ class DynamicPartitionRuntime:
         selector: ClientRuntimeSelector,
         local_executor: LocalExecutor,
         metrics_logger: MetricsLogger,
+        jetson_telemetry=None,
         triton_client=None,
         print_every: int = 0,
     ):
@@ -24,6 +26,7 @@ class DynamicPartitionRuntime:
         self.selector = selector
         self.local_executor = local_executor
         self.metrics_logger = metrics_logger
+        self.jetson_telemetry = jetson_telemetry or NullJetsonTelemetry()
         self.triton_client = triton_client
         self.print_every = max(0, int(print_every))
 
@@ -42,7 +45,11 @@ class DynamicPartitionRuntime:
             f"client={client_ms:.2f}ms "
             f"transfer={transfer_ms:.2f}ms "
             f"server={(f'{server_ms:.2f}ms' if server_ms is not None else 'n/a')} "
-            f"e2e={e2e_ms:.2f}ms"
+            f"e2e={e2e_ms:.2f}ms "
+            f"power={(f'{metrics.latest_sampled_power_w:.2f}W' if metrics.latest_sampled_power_w is not None else 'n/a')} "
+            f"temp={(f'{metrics.latest_sampled_temp_c:.2f}C' if metrics.latest_sampled_temp_c is not None else 'n/a')} "
+            f"cpu_avg={(f'{metrics.latest_avg_cpu_util:.2f}%' if metrics.latest_avg_cpu_util is not None else 'n/a')} "
+            f"gpu_avg={(f'{metrics.latest_avg_gpu_util:.2f}%' if metrics.latest_avg_gpu_util is not None else 'n/a')}"
         )
 
     def run(self, max_requests=None) -> None:
@@ -90,6 +97,7 @@ class DynamicPartitionRuntime:
                     raise ValueError(f"Unsupported mode: {plan.mode}")
 
                 e2e_latency = time.perf_counter() - t0
+                telemetry = self.jetson_telemetry.get_latest()
                 metrics = RequestMetrics(
                     request_id=request_id,
                     timestamp=time.time(),
@@ -103,6 +111,13 @@ class DynamicPartitionRuntime:
                     e2e_latency=e2e_latency,
                     bytes_sent=bytes_sent,
                     bytes_received=bytes_received,
+                    latest_sampled_power_w=telemetry.latest_sampled_power_w,
+                    latest_sampled_temp_c=telemetry.latest_sampled_temp_c,
+                    latest_power_w=telemetry.latest_power_w,
+                    latest_avg_cpu_util=telemetry.latest_avg_cpu_util,
+                    latest_avg_gpu_util=telemetry.latest_avg_gpu_util,
+                    latest_avg_temp_c=telemetry.latest_avg_temp_c,
+                    jetson_sample_timestamp=telemetry.jetson_sample_timestamp,
                 )
                 self.metrics_logger.log(metrics)
                 last_metrics = metrics

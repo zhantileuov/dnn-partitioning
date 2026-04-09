@@ -4,6 +4,7 @@ from pathlib import Path
 from dnn_partition.common.partition_manager import PartitionManager
 
 from .config import ClientConfig, default_client_config_path, default_project_root, load_client_config
+from .jetson_telemetry import build_jetson_telemetry_sampler
 from .local_executor import LocalExecutor
 from .metrics import build_metrics_logger
 from .runtime import DynamicPartitionRuntime
@@ -71,6 +72,25 @@ def parse_args() -> argparse.Namespace:
         default=defaults.control_port,
         help="UDP port for remote control commands from another machine.",
     )
+    parser.add_argument(
+        "--jetson-telemetry-enabled",
+        dest="jetson_telemetry_enabled",
+        action="store_true",
+        default=defaults.jetson_telemetry_enabled,
+        help="Enable background Jetson jtop telemetry sampling.",
+    )
+    parser.add_argument(
+        "--disable-jetson-telemetry",
+        dest="jetson_telemetry_enabled",
+        action="store_false",
+        help="Disable background Jetson jtop telemetry sampling.",
+    )
+    parser.add_argument(
+        "--jetson-telemetry-interval-s",
+        type=float,
+        default=defaults.jetson_telemetry_interval_s,
+        help="Background jtop sampling interval in seconds.",
+    )
     return parser.parse_args()
 
 
@@ -95,6 +115,7 @@ def main() -> None:
         metrics_path = root / metrics_path
 
     metrics_logger = None
+    jetson_telemetry = None
     partition_manager = PartitionManager()
     initial_decision = SchedulerDecision(
         mode=args.mode,
@@ -120,6 +141,10 @@ def main() -> None:
     try:
         selector = ClientRuntimeSelector(partition_manager, scheduler)
         local_executor = LocalExecutor(partition_manager, device=args.device)
+        jetson_telemetry = build_jetson_telemetry_sampler(
+            enabled=args.jetson_telemetry_enabled,
+            interval_s=args.jetson_telemetry_interval_s,
+        )
         metrics_logger = build_metrics_logger(
             sink=args.metrics_sink,
             csv_path=metrics_path,
@@ -135,11 +160,14 @@ def main() -> None:
             selector=selector,
             local_executor=local_executor,
             metrics_logger=metrics_logger,
+            jetson_telemetry=jetson_telemetry,
             triton_client=triton_client,
             print_every=args.print_every,
         )
         runtime.run(max_requests=args.max_requests)
     finally:
+        if jetson_telemetry is not None:
+            jetson_telemetry.close()
         if metrics_logger is not None:
             metrics_logger.close()
         if isinstance(scheduler, RemoteControlledScheduler):

@@ -32,3 +32,10 @@ class RequestMetrics:
     e2e_latency: float
     bytes_sent: int
     bytes_received: int
+    latest_sampled_power_w: Optional[float] = None
+    latest_sampled_temp_c: Optional[float] = None
+    latest_power_w: Optional[float] = None
+    latest_avg_cpu_util: Optional[float] = None
+    latest_avg_gpu_util: Optional[float] = None
+    latest_avg_temp_c: Optional[float] = None
+    jetson_sample_timestamp: Optional[float] = None

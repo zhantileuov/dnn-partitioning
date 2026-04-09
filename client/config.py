@@ -36,6 +36,12 @@ class ClientConfig:
         if os.environ.get("DNN_PARTITION_CONTROL_PORT")
         else None
     )
+    jetson_telemetry_enabled: bool = os.environ.get("DNN_PARTITION_JETSON_TELEMETRY_ENABLED", "1") not in {
+        "0",
+        "false",
+        "False",
+    }
+    jetson_telemetry_interval_s: float = float(os.environ.get("DNN_PARTITION_JETSON_TELEMETRY_INTERVAL_S", "1.0"))
     max_requests: Optional[int] = (
         int(os.environ["DNN_PARTITION_MAX_REQUESTS"])
         if os.environ.get("DNN_PARTITION_MAX_REQUESTS")
@@ -64,6 +70,7 @@ def load_client_config(path: Path) -> ClientConfig:
     client = raw.get("client", {})
     kafka = raw.get("kafka", {})
     control = raw.get("control", {})
+    jetson = raw.get("jetson", {})
 
     return ClientConfig(
         triton_url=_pick_str(client.get("triton_url"), ClientConfig.triton_url),
@@ -84,6 +91,14 @@ def load_client_config(path: Path) -> ClientConfig:
         print_every=_pick_int(client.get("print_every"), ClientConfig.print_every),
         control_host=_pick_optional_str(control.get("host"), ClientConfig.control_host),
         control_port=_pick_optional_int(control.get("port"), ClientConfig.control_port),
+        jetson_telemetry_enabled=_pick_bool(
+            jetson.get("telemetry_enabled"),
+            ClientConfig.jetson_telemetry_enabled,
+        ),
+        jetson_telemetry_interval_s=_pick_float(
+            jetson.get("telemetry_interval_s"),
+            ClientConfig.jetson_telemetry_interval_s,
+        ),
         max_requests=_pick_optional_int(client.get("max_requests"), ClientConfig.max_requests),
     )
 
@@ -109,6 +124,18 @@ def _pick_optional_int(value: Any, fallback: Optional[int]) -> Optional[int]:
         return fallback
     if isinstance(value, int):
         return value
+    return fallback
+
+
+def _pick_bool(value: Any, fallback: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return fallback
+
+
+def _pick_float(value: Any, fallback: float) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
     return fallback
 
 
