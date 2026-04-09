@@ -1,8 +1,18 @@
 import os
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
+
+try:
+    import tomllib as _toml_loader
+except ImportError:
+    try:
+        import tomli as _toml_loader
+    except ImportError:
+        try:
+            import toml as _toml_loader
+        except ImportError:
+            _toml_loader = None
 
 
 @dataclass(frozen=True)
@@ -42,8 +52,14 @@ def default_client_config_path() -> Path:
 
 
 def load_client_config(path: Path) -> ClientConfig:
+    if _toml_loader is None:
+        raise RuntimeError(
+            "TOML config support requires 'tomli' on Python 3.6/3.7/3.8/3.9/3.10 or 'toml' as a fallback. "
+            "Install one of them with 'pip install tomli'."
+        )
+
     with path.open("rb") as handle:
-        raw = tomllib.load(handle)
+        raw = _toml_load(handle)
 
     client = raw.get("client", {})
     kafka = raw.get("kafka", {})
@@ -94,3 +110,11 @@ def _pick_optional_int(value: Any, fallback: Optional[int]) -> Optional[int]:
     if isinstance(value, int):
         return value
     return fallback
+
+
+def _toml_load(handle):
+    try:
+        return _toml_loader.load(handle)
+    except TypeError:
+        handle.seek(0)
+        return _toml_loader.load(handle.read().decode("utf-8"))

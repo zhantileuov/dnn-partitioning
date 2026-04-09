@@ -5,17 +5,17 @@ import queue
 import threading
 from dataclasses import asdict
 from pathlib import Path
-from typing import Iterable, Optional, Protocol
+from typing import Iterable, Optional
 
 from dnn_partition.common.types import RequestMetrics
 
 
-class MetricsLogger(Protocol):
+class MetricsLogger:
     def log(self, metrics: RequestMetrics) -> None:
-        ...
+        raise NotImplementedError
 
     def close(self) -> None:
-        ...
+        raise NotImplementedError
 
 
 class NullMetricsLogger:
