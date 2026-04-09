@@ -81,6 +81,13 @@ export DNN_PARTITION_KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:9092
 python3 -m dnn_partition.client.main
 ```
 
+TOML config file example:
+
+```powershell
+Copy-Item client\client_config.toml.example client\client_config.toml
+python -m dnn_partition.client.main --config client\client_config.toml
+```
+
 ## Local Observability Stack
 
 Run this once on the current machine to start Kafka, Kafka UI, Prometheus, and Grafana:

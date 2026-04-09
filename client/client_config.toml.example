@@ -1,0 +1,73 @@
+# Copy this file to client/client_config.toml and adjust the values for each machine.
+# Run with:
+#   python -m dnn_partition.client.main --config client/client_config.toml
+
+[client]
+# Triton gRPC endpoint.
+triton_url = "127.0.0.1:8001"
+
+# Path to the input video.
+# Relative paths are resolved from the dnn_partition project root.
+video_path = "assets/videos/input.mp4"
+
+# Metrics sink options:
+#   "csv"   -> write only CSV
+#   "kafka" -> publish only to Kafka
+#   "both"  -> CSV + Kafka
+#   "none"  -> disable metrics output
+metrics_sink = "kafka"
+
+# CSV output path, used when metrics_sink is "csv" or "both".
+metrics_csv = "artifacts/logs/metrics.csv"
+
+# Runtime mode options:
+#   "full_local"
+#   "full_server"
+#   "split"
+mode = "full_local"
+
+# Model options currently supported in this project:
+#   "resnet18"
+#   "resnet50"
+#   "mobilenet_v2"
+#   "mobilenet_v3_large"
+#   "mobilenet_v3_small"
+model = "resnet18"
+
+# Partition point is used only when mode = "split".
+# Examples:
+#   "stem"
+#   "layer1.0"
+#   "layer2.0"
+#   "layer4.1"
+partition_point = ""
+
+# Optional torch device override. Leave empty to use the project default.
+# Examples: "cpu", "cuda"
+device = ""
+
+# Print a progress line every N requests. Use 0 to disable console progress.
+print_every = 5
+
+# Optional limit on number of processed requests.
+# Set to 0 or remove if you want to run continuously.
+max_requests = 0
+
+[kafka]
+# Comma-separated list of Kafka bootstrap servers.
+bootstrap_servers = "127.0.0.1:9092"
+
+# Kafka topic that receives client metrics.
+topic = "dnn_partition.metrics"
+
+# Kafka client id visible in broker/client logs.
+client_id = "dnn-partition-client"
+
+# Max number of metrics buffered in memory before Kafka send.
+queue_size = 1000
+
+[control]
+# Optional UDP control listener for live mode changes.
+# Leave empty to disable remote control.
+host = ""
+port = 0

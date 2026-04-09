@@ -3,7 +3,7 @@ from pathlib import Path
 
 from dnn_partition.common.partition_manager import PartitionManager
 
-from .config import ClientConfig, default_project_root
+from .config import ClientConfig, default_client_config_path, default_project_root, load_client_config
 from .local_executor import LocalExecutor
 from .metrics import build_metrics_logger
 from .runtime import DynamicPartitionRuntime
@@ -14,8 +14,19 @@ from .video_source import LoopingVideoFrameSource
 
 
 def parse_args() -> argparse.Namespace:
-    defaults = ClientConfig()
+    bootstrap_parser = argparse.ArgumentParser(add_help=False)
+    bootstrap_parser.add_argument("--config", default=None, help="Path to a TOML config file.")
+    bootstrap_args, _ = bootstrap_parser.parse_known_args()
+
+    config_path = Path(bootstrap_args.config) if bootstrap_args.config else default_client_config_path()
+    defaults = load_client_config(config_path) if config_path.exists() else ClientConfig()
+
     parser = argparse.ArgumentParser(description="Run the dynamic DNN partitioning client runtime.")
+    parser.add_argument(
+        "--config",
+        default=str(config_path) if config_path.exists() else None,
+        help="Path to a TOML config file.",
+    )
     parser.add_argument("--video", default=defaults.video_path, help="Path to the input video.")
     parser.add_argument("--metrics-csv", default=defaults.metrics_csv, help="Path to the output metrics CSV.")
     parser.add_argument(
@@ -42,22 +53,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--partition-point", default=defaults.partition_point)
     parser.add_argument("--triton-url", default=defaults.triton_url)
     parser.add_argument("--max-requests", type=int, default=defaults.max_requests)
-    parser.add_argument("--device", default=None, help="Torch device override, e.g. cpu or cuda.")
+    parser.add_argument("--device", default=defaults.device, help="Torch device override, e.g. cpu or cuda.")
     parser.add_argument(
         "--print-every",
         type=int,
-        default=5,
+        default=defaults.print_every,
         help="Print a short runtime summary every N processed requests. Use 0 to disable.",
     )
     parser.add_argument(
         "--control-host",
-        default=None,
+        default=defaults.control_host,
         help="Bind address for remote control commands. If set together with --control-port, the client listens for live updates.",
     )
     parser.add_argument(
         "--control-port",
         type=int,
-        default=None,
+        default=defaults.control_port,
         help="UDP port for remote control commands from another machine.",
     )
     return parser.parse_args()
@@ -66,6 +77,14 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     root = default_project_root()
+    if args.max_requests is not None and args.max_requests <= 0:
+        args.max_requests = None
+    if args.control_port is not None and args.control_port <= 0:
+        args.control_port = None
+    if args.partition_point == "":
+        args.partition_point = None
+    if args.device == "":
+        args.device = None
 
     video_path = Path(args.video)
     if not video_path.is_absolute():

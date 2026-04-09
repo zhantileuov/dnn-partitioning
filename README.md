@@ -80,6 +80,12 @@ Client defaults can be overridden with:
 - `DNN_PARTITION_PARTITION_POINT`
 - `DNN_PARTITION_MAX_REQUESTS`
 
+You can also store client settings in `client/client_config.toml.example` by copying it to `client/client_config.toml` and running:
+
+```bash
+python -m dnn_partition.client.main --config client/client_config.toml
+```
+
 ## Logs
 
 The client writes CSV metrics by default to:
