@@ -10,4 +10,3 @@ artifacts/
 server/dynamic_model_repo/
 
 *.log
-client/client_config.toml

@@ -27,6 +27,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--input-mode", choices=["zeros", "random"], default="random", help="Dummy input mode.")
     parser.add_argument("--timeout-s", type=float, default=30.0, help="Per-request Triton timeout.")
     parser.add_argument("--log-every", type=float, default=5.0, help="Print stats every N seconds.")
+    parser.add_argument("--duration-s", type=float, default=None, help="Optional total runtime in seconds.")
     parser.add_argument("--max-requests", type=int, default=None, help="Stop after this many sends per process.")
     parser.add_argument("--processes", type=int, default=1, help="Optional number of OS processes.")
     parser.add_argument("--process-index", type=int, default=0, help=argparse.SUPPRESS)
@@ -270,6 +271,9 @@ def run_single_process(args: argparse.Namespace) -> int:
         worker.start()
 
     try:
+        if args.duration_s is not None:
+            stop_event.wait(args.duration_s)
+            stop_event.set()
         for worker in workers:
             worker.join()
     finally:
@@ -315,6 +319,8 @@ def run_multi_process(args: argparse.Namespace) -> int:
             str(index),
             "--spawned-child",
         ]
+        if args.duration_s is not None:
+            cmd.extend(["--duration-s", str(args.duration_s)])
         if per_process_limits[index] is not None:
             cmd.extend(["--max-requests", str(per_process_limits[index])])
         procs.append(subprocess.Popen(cmd))
