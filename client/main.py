@@ -7,6 +7,7 @@ from .config import ClientConfig, default_client_config_path, default_project_ro
 from .jetson_telemetry import build_jetson_telemetry_sampler
 from .local_executor import LocalExecutor
 from .metrics import build_metrics_logger
+from .prewarm import build_prewarm_plans, run_prewarm
 from .runtime import DynamicPartitionRuntime
 from .runtime_selector import ClientRuntimeSelector
 from .scheduler import RemoteControlledScheduler, SchedulerDecision, StaticScheduler
@@ -52,6 +53,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mode", default=defaults.mode, choices=["full_local", "full_server", "split"])
     parser.add_argument("--model", default=defaults.model_name)
     parser.add_argument("--partition-point", default=defaults.partition_point)
+    parser.add_argument(
+        "--prewarm-mode",
+        default=defaults.prewarm_mode,
+        choices=["off", "current", "all"],
+        help="Warm selected execution paths before the real run without logging warm-up metrics.",
+    )
     parser.add_argument("--triton-url", default=defaults.triton_url)
     parser.add_argument("--max-requests", type=int, default=defaults.max_requests)
     parser.add_argument("--device", default=defaults.device, help="Torch device override, e.g. cpu or cuda.")
@@ -145,6 +152,26 @@ def main() -> None:
             enabled=args.jetson_telemetry_enabled,
             interval_s=args.jetson_telemetry_interval_s,
         )
+        triton_client = TritonRequestClient(args.triton_url)
+        prewarm_video_source = LoopingVideoFrameSource(video_path)
+        try:
+            prewarm_video_source.open()
+            _, sample_frame = prewarm_video_source.read()
+        finally:
+            prewarm_video_source.close()
+        prewarm_plans = build_prewarm_plans(
+            partition_manager=partition_manager,
+            mode=args.mode,
+            model_name=args.model,
+            partition_point=args.partition_point,
+            prewarm_mode=args.prewarm_mode,
+        )
+        run_prewarm(
+            local_executor=local_executor,
+            triton_client=triton_client,
+            plans=prewarm_plans,
+            sample_frame=sample_frame,
+        )
         metrics_logger = build_metrics_logger(
             sink=args.metrics_sink,
             csv_path=metrics_path,
@@ -153,7 +180,6 @@ def main() -> None:
             kafka_client_id=args.kafka_client_id,
             kafka_queue_size=args.kafka_queue_size,
         )
-        triton_client = TritonRequestClient(args.triton_url)
 
         runtime = DynamicPartitionRuntime(
             video_source=LoopingVideoFrameSource(video_path),

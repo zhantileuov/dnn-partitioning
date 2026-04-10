@@ -28,6 +28,7 @@ class ClientConfig:
     mode: str = os.environ.get("DNN_PARTITION_MODE", "full_local")
     model_name: str = os.environ.get("DNN_PARTITION_MODEL", "resnet18")
     partition_point: Optional[str] = os.environ.get("DNN_PARTITION_PARTITION_POINT") or None
+    prewarm_mode: str = os.environ.get("DNN_PARTITION_PREWARM_MODE", "off")
     device: Optional[str] = os.environ.get("DNN_PARTITION_DEVICE") or None
     print_every: int = int(os.environ.get("DNN_PARTITION_PRINT_EVERY", "5"))
     control_host: Optional[str] = os.environ.get("DNN_PARTITION_CONTROL_HOST") or None
@@ -87,6 +88,7 @@ def load_client_config(path: Path) -> ClientConfig:
         mode=_pick_str(client.get("mode"), ClientConfig.mode),
         model_name=_pick_str(client.get("model"), ClientConfig.model_name),
         partition_point=_pick_optional_str(client.get("partition_point"), ClientConfig.partition_point),
+        prewarm_mode=_pick_str(client.get("prewarm_mode"), ClientConfig.prewarm_mode),
         device=_pick_optional_str(client.get("device"), ClientConfig.device),
         print_every=_pick_int(client.get("print_every"), ClientConfig.print_every),
         control_host=_pick_optional_str(control.get("host"), ClientConfig.control_host),

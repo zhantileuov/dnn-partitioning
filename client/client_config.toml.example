@@ -26,6 +26,13 @@ metrics_csv = "artifacts/logs/metrics.csv"
 #   "split"
 mode = "full_local"
 
+# Optional warm-up before the real run. Warm-up requests are not logged to Kafka/CSV.
+# Options:
+#   "off"     -> no prewarm
+#   "current" -> prewarm only the starting mode/model/partition
+#   "all"     -> prewarm full_local, full_server, and all split points for the selected model
+prewarm_mode = "off"
+
 # Model options currently supported in this project:
 #   "resnet18"
 #   "resnet50"

@@ -56,6 +56,7 @@ Client defaults can be overridden with:
 - `DNN_PARTITION_KAFKA_QUEUE_SIZE`
 - `DNN_PARTITION_JETSON_TELEMETRY_ENABLED`
 - `DNN_PARTITION_JETSON_TELEMETRY_INTERVAL_S`
+- `DNN_PARTITION_PREWARM_MODE`
 - `DNN_PARTITION_MODE`
 - `DNN_PARTITION_MODEL`
 - `DNN_PARTITION_PARTITION_POINT`
@@ -70,6 +71,7 @@ $env:DNN_PARTITION_MODEL = "resnet18"
 $env:DNN_PARTITION_METRICS_SINK = "kafka"
 $env:DNN_PARTITION_KAFKA_BOOTSTRAP_SERVERS = "127.0.0.1:9092"
 $env:DNN_PARTITION_JETSON_TELEMETRY_INTERVAL_S = "1.0"
+$env:DNN_PARTITION_PREWARM_MODE = "current"
 python -m dnn_partition.client.main
 ```
 
@@ -82,6 +84,7 @@ export DNN_PARTITION_MODEL=resnet18
 export DNN_PARTITION_METRICS_SINK=kafka
 export DNN_PARTITION_KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:9092
 export DNN_PARTITION_JETSON_TELEMETRY_INTERVAL_S=1.0
+export DNN_PARTITION_PREWARM_MODE=current
 python3 -m dnn_partition.client.main
 ```
 
@@ -356,6 +359,7 @@ python -m dnn_partition.client.main --metrics-sink none
 
 The Kafka publisher uses a background thread and bounded queue, so metric publishing does not block the inference loop. If the queue fills, the client drops excess metrics and prints a warning instead of slowing inference.
 Jetson telemetry sampling also runs in a background thread, so `jtop` collection does not block the main inference loop. Each request logs the latest cached power/temperature snapshot together with rolling CPU/GPU/temperature averages.
+Prewarm runs before the main loop and does not write warm-up samples to Kafka or CSV, which keeps experiment data clean.
 
 ## Triton-side Statistics
 

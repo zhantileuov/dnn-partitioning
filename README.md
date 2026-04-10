@@ -77,6 +77,7 @@ Client defaults can be overridden with:
 - `DNN_PARTITION_KAFKA_QUEUE_SIZE`
 - `DNN_PARTITION_JETSON_TELEMETRY_ENABLED`
 - `DNN_PARTITION_JETSON_TELEMETRY_INTERVAL_S`
+- `DNN_PARTITION_PREWARM_MODE`
 - `DNN_PARTITION_MODE`
 - `DNN_PARTITION_MODEL`
 - `DNN_PARTITION_PARTITION_POINT`
@@ -96,6 +97,7 @@ The client writes CSV metrics by default to:
 
 Kafka publishing can be enabled with `--metrics-sink kafka` or `--metrics-sink both`.
 On Jetson devices, the client also samples `jtop` in a background thread and attaches the latest cached power/temperature/CPU/GPU values to each request metric.
+Optional prewarm can initialize the selected local/server paths before the real run begins, and warm-up requests are not written to Kafka or CSV.
 
 Console progress output is printed every `--print-every N` requests.
 
