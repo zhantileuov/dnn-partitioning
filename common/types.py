@@ -30,11 +30,11 @@ class RequestMetrics:
     transfer_time: float
     server_processing_time: Optional[float]
     e2e_latency: float
+    bytes_sent: int
+    bytes_received: int
     loop_latency: Optional[float] = None
     frame_read_time: Optional[float] = None
     post_e2e_overhead: Optional[float] = None
-    bytes_sent: int
-    bytes_received: int
     latest_sampled_power_w: Optional[float] = None
     latest_sampled_temp_c: Optional[float] = None
     latest_power_w: Optional[float] = None
