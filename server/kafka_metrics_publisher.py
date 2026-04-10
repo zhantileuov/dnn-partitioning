@@ -77,6 +77,7 @@ def avg_duration_ms(current_sum: Optional[float], previous_sum: Optional[float],
 def read_jtop_server_metrics(jetson) -> dict:
     stats = getattr(jetson, "stats", {}) or {}
     temperature = getattr(jetson, "temperature", {}) or {}
+    memory = getattr(jetson, "memory", {}) or {}
 
     gpu_util = _to_float(stats.get("GPU"))
     cpu_util = _avg_cpu_util(stats)
@@ -84,10 +85,13 @@ def read_jtop_server_metrics(jetson) -> dict:
     temperature_c = _avg_temperature_c(temperature if temperature else stats)
     power_w = _milli_to_watts(stats.get("power cur"))
     power_avg_w = _milli_to_watts(stats.get("power avg"))
+    gpu_mem_used_mb, gpu_mem_total_mb = _gpu_memory_from_jtop(memory)
 
     # Triton Prometheus already provides GPU memory bytes, so temperature/power come from jtop.
     return {
         "gpu_util_percent": gpu_util,
+        "gpu_mem_used_mb": gpu_mem_used_mb,
+        "gpu_mem_total_mb": gpu_mem_total_mb,
         "cpu_util_percent": cpu_util,
         "mem_util_percent": mem_util,
         "temperature_c": temperature_c,
@@ -131,8 +135,43 @@ def _memory_util_percent(stats: dict) -> Optional[float]:
     ram = _to_float(stats.get("RAM"))
     if ram is None or ram <= 0:
         return None
-    # jtop RAM on Jetson stats is usually already a percentage-like value on this project’s devices.
-    return ram
+    # On Jetson stats this value may be reported as a ratio in [0, 1].
+    return ram * 100.0 if ram <= 1.0 else ram
+
+
+def _gpu_memory_from_jtop(memory: dict):
+    if not isinstance(memory, dict):
+        return None, None
+
+    candidates = [
+        memory.get("GPU"),
+        memory.get("gpu"),
+        memory.get("RAM"),
+        memory.get("ram"),
+    ]
+
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        used_mb = _memory_value_to_mb(candidate.get("used") or candidate.get("use"))
+        total_mb = _memory_value_to_mb(candidate.get("tot") or candidate.get("total"))
+        if used_mb is not None or total_mb is not None:
+            return used_mb, total_mb
+
+    return None, None
+
+
+def _memory_value_to_mb(value) -> Optional[float]:
+    parsed = _to_float(value)
+    if parsed is None:
+        return None
+    # Heuristic: values larger than 64K are likely bytes.
+    if parsed > 65536:
+        return parsed / (1024.0 * 1024.0)
+    # Values larger than 4096 are likely KB.
+    if parsed > 4096:
+        return parsed / 1024.0
+    return parsed
 
 
 def _to_float(value) -> Optional[float]:
@@ -248,8 +287,16 @@ def build_payload(
         "metrics_window_s": window_s,
         "server": {
             "gpu_util_percent": gpu_util_ratio * 100.0 if gpu_util_ratio is not None else system_metrics.get("gpu_util_percent"),
-            "gpu_mem_used_mb": (gpu_mem_used_bytes / (1024.0 * 1024.0)) if gpu_mem_used_bytes is not None else None,
-            "gpu_mem_total_mb": (gpu_mem_total_bytes / (1024.0 * 1024.0)) if gpu_mem_total_bytes is not None else None,
+            "gpu_mem_used_mb": (
+                gpu_mem_used_bytes / (1024.0 * 1024.0)
+                if gpu_mem_used_bytes is not None
+                else system_metrics.get("gpu_mem_used_mb")
+            ),
+            "gpu_mem_total_mb": (
+                gpu_mem_total_bytes / (1024.0 * 1024.0)
+                if gpu_mem_total_bytes is not None
+                else system_metrics.get("gpu_mem_total_mb")
+            ),
             "cpu_util_percent": cpu_util_ratio * 100.0 if cpu_util_ratio is not None else system_metrics.get("cpu_util_percent"),
             "mem_util_percent": mem_util_percent,
             "temperature_c": system_metrics.get("temperature_c"),
