@@ -74,8 +74,8 @@ class JetsonTelemetrySampler:
         power = getattr(jetson, "power", {}) or {}
         temperature = getattr(jetson, "temperature", {}) or {}
 
-        sampled_power_w = self._extract_total_power_w(power)
-        avg_power_w = self._extract_avg_power_w(power)
+        sampled_power_w = self._extract_total_power_w(power, stats)
+        avg_power_w = self._extract_avg_power_w(power, stats)
         sampled_temp_c = self._extract_avg_temperature_c(temperature)
         cpu_util = self._extract_avg_cpu_util(stats)
         gpu_util = self._extract_gpu_util(stats)
@@ -102,30 +102,44 @@ class JetsonTelemetrySampler:
         with self._lock:
             self._snapshot = snapshot
 
-    def _extract_total_power_w(self, power: dict) -> Optional[float]:
-        total = power.get("tot")
-        if not isinstance(total, dict):
-            return None
-        value = total.get("power")
+    def _extract_total_power_w(self, power, stats: dict) -> Optional[float]:
+        value = None
+        if isinstance(power, dict):
+            total = power.get("tot")
+            if isinstance(total, dict):
+                value = total.get("power")
+        elif isinstance(power, (tuple, list)) and power:
+            if isinstance(power[0], dict):
+                value = power[0].get("cur")
+        if value is None:
+            value = stats.get("power cur")
         return self._milli_to_base(value)
 
-    def _extract_avg_power_w(self, power: dict) -> Optional[float]:
-        total = power.get("tot")
-        if not isinstance(total, dict):
-            return None
-        value = total.get("avg")
+    def _extract_avg_power_w(self, power, stats: dict) -> Optional[float]:
+        value = None
+        if isinstance(power, dict):
+            total = power.get("tot")
+            if isinstance(total, dict):
+                value = total.get("avg")
+        elif isinstance(power, (tuple, list)) and power:
+            if isinstance(power[0], dict):
+                value = power[0].get("avg")
+        if value is None:
+            value = stats.get("power avg")
         return self._milli_to_base(value)
 
-    def _extract_avg_temperature_c(self, temperature: dict) -> Optional[float]:
+    def _extract_avg_temperature_c(self, temperature) -> Optional[float]:
         temps = []
-        for sensor in temperature.values():
-            if not isinstance(sensor, dict):
-                continue
-            if sensor.get("online") is False:
-                continue
-            temp = self._to_float(sensor.get("temp"))
-            if temp is not None and temp > -200:
-                temps.append(temp)
+        if isinstance(temperature, dict):
+            for sensor in temperature.values():
+                if isinstance(sensor, dict):
+                    if sensor.get("online") is False:
+                        continue
+                    temp = self._to_float(sensor.get("temp"))
+                else:
+                    temp = self._to_float(sensor)
+                if temp is not None and temp > -200:
+                    temps.append(temp)
         if not temps:
             return None
         return sum(temps) / float(len(temps))
