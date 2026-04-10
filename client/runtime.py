@@ -35,6 +35,9 @@ class DynamicPartitionRuntime:
         transfer_ms = metrics.transfer_time * 1000.0
         server_ms = metrics.server_processing_time * 1000.0 if metrics.server_processing_time is not None else None
         e2e_ms = metrics.e2e_latency * 1000.0
+        loop_ms = metrics.loop_latency * 1000.0 if metrics.loop_latency is not None else None
+        read_ms = metrics.frame_read_time * 1000.0 if metrics.frame_read_time is not None else None
+        overhead_ms = metrics.post_e2e_overhead * 1000.0 if metrics.post_e2e_overhead is not None else None
         print(
             "[client] "
             f"processed={processed} "
@@ -46,6 +49,9 @@ class DynamicPartitionRuntime:
             f"transfer={transfer_ms:.2f}ms "
             f"server={(f'{server_ms:.2f}ms' if server_ms is not None else 'n/a')} "
             f"e2e={e2e_ms:.2f}ms "
+            f"loop={(f'{loop_ms:.2f}ms' if loop_ms is not None else 'n/a')} "
+            f"read={(f'{read_ms:.2f}ms' if read_ms is not None else 'n/a')} "
+            f"overhead={(f'{overhead_ms:.2f}ms' if overhead_ms is not None else 'n/a')} "
             f"power={(f'{metrics.latest_sampled_power_w:.2f}W' if metrics.latest_sampled_power_w is not None else 'n/a')} "
             f"temp={(f'{metrics.latest_sampled_temp_c:.2f}C' if metrics.latest_sampled_temp_c is not None else 'n/a')} "
             f"cpu_avg={(f'{metrics.latest_avg_cpu_util:.2f}%' if metrics.latest_avg_cpu_util is not None else 'n/a')} "
@@ -58,7 +64,10 @@ class DynamicPartitionRuntime:
         last_metrics = None
         try:
             while max_requests is None or processed < max_requests:
+                loop_start = time.perf_counter()
+                read_start = time.perf_counter()
                 frame_id, frame = self.video_source.read()
+                frame_read_time = time.perf_counter() - read_start
                 plan = self.selector.next_plan(frame_id, last_metrics=last_metrics)
                 request_id = str(uuid.uuid4())
                 t0 = time.perf_counter()
@@ -109,6 +118,9 @@ class DynamicPartitionRuntime:
                     transfer_time=transfer_time,
                     server_processing_time=server_processing_time,
                     e2e_latency=e2e_latency,
+                    loop_latency=None,
+                    frame_read_time=frame_read_time,
+                    post_e2e_overhead=None,
                     bytes_sent=bytes_sent,
                     bytes_received=bytes_received,
                     latest_sampled_power_w=telemetry.latest_sampled_power_w,
@@ -120,6 +132,8 @@ class DynamicPartitionRuntime:
                     jetson_sample_timestamp=telemetry.jetson_sample_timestamp,
                 )
                 self.metrics_logger.log(metrics)
+                metrics.loop_latency = time.perf_counter() - loop_start
+                metrics.post_e2e_overhead = metrics.loop_latency - metrics.e2e_latency
                 last_metrics = metrics
                 processed += 1
                 if self.print_every and processed % self.print_every == 0:
