@@ -8,10 +8,7 @@ class ClientRuntimeSelector:
     def __init__(self, partition_manager: PartitionManager, scheduler: BaseScheduler):
         self.partition_manager = partition_manager
         self.scheduler = scheduler
-        self._partition_points_by_model = {
-            model_name: set(self.partition_manager.list_partition_points(model_name))
-            for model_name in self.partition_manager.list_models()
-        }
+        self._partition_points_by_model = {}
 
     def next_plan(self, frame_id: int, last_metrics=None) -> ExecutionPlan:
         decision = self.scheduler.next_decision(frame_id, last_metrics=last_metrics)
@@ -20,7 +17,8 @@ class ClientRuntimeSelector:
                 raise ValueError("Split mode requires a partition point")
             valid_partition_points = self._partition_points_by_model.get(decision.model_name)
             if valid_partition_points is None:
-                raise ValueError(f"Unsupported model: {decision.model_name}")
+                valid_partition_points = set(self.partition_manager.list_partition_points(decision.model_name))
+                self._partition_points_by_model[decision.model_name] = valid_partition_points
             if decision.partition_point not in valid_partition_points:
                 raise ValueError(
                     f"Invalid partition point {decision.partition_point!r} for model {decision.model_name}"
