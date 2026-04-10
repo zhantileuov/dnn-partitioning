@@ -378,6 +378,24 @@ curl http://localhost:8002/metrics
 
 Prometheus in the observability stack scrapes Triton from `host.docker.internal:8002`. If your Triton server runs elsewhere, update `observability/prometheus/prometheus.yml`.
 
+## Server Metrics To Kafka
+
+Run this on the Triton server machine to publish one-second server snapshots to Kafka:
+
+```bash
+python3 -m dnn_partition.server.kafka_metrics_publisher \
+  --triton-metrics-url http://127.0.0.1:8002/metrics \
+  --kafka-bootstrap-servers 172.22.229.75:9092 \
+  --topic dnn_partition.server_metrics \
+  --server-id jetson-orin-1 \
+  --window-s 1.0
+```
+
+Kafka topics created by the observability stack:
+
+- `dnn_partition.metrics`
+- `dnn_partition.server_metrics`
+
 ## Split Execution Logic
 
 - `full_server`

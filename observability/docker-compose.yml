@@ -9,7 +9,7 @@ services:
       KAFKA_CFG_PROCESS_ROLES: controller,broker
       KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@kafka:9093
       KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
-      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://172.22.229.38:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://172.22.229.75:9092
       KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
@@ -40,6 +40,14 @@ services:
       --create
       --if-not-exists
       --topic dnn_partition.metrics
+      --partitions 3
+      --replication-factor 1
+      &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh
+      --bootstrap-server kafka:9092
+      --create
+      --if-not-exists
+      --topic dnn_partition.server_metrics
       --partitions 3
       --replication-factor 1
       "

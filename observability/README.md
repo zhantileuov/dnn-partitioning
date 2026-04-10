@@ -35,6 +35,7 @@ docker compose down
 The compose stack creates this topic automatically:
 
 - `dnn_partition.metrics`
+- `dnn_partition.server_metrics`
 
 ## Client Publishing
 
@@ -88,3 +89,21 @@ Kafka UI at `http://localhost:8080` is the fastest way to confirm messages are a
 Prometheus is already configured to scrape Triton at `host.docker.internal:8002`.
 
 If Triton is running on another host, update `observability/prometheus/prometheus.yml` and change the target under the `triton` job.
+
+## Server Metrics Publisher
+
+On the Triton server machine, you can publish one-second Triton + Jetson snapshots to Kafka:
+
+```bash
+python3 -m dnn_partition.server.kafka_metrics_publisher \
+  --triton-metrics-url http://127.0.0.1:8002/metrics \
+  --kafka-bootstrap-servers 172.22.229.75:9092 \
+  --topic dnn_partition.server_metrics \
+  --server-id jetson-orin-1 \
+  --window-s 1.0
+```
+
+This publisher uses:
+
+- Triton Prometheus metrics for per-model request and latency counters
+- `jtop` for Jetson temperature and system telemetry
