@@ -130,6 +130,12 @@ One model:
 python3 -m dnn_partition.server.repository_builder --repo-dir ~/dnn_partition/server/dynamic_model_repo --model resnet18 --device cpu
 ```
 
+Standalone load model:
+
+```bash
+python3 -m dnn_partition.server.export_load_model --repo-dir ~/dnn_partition/server/dynamic_model_repo --model resnet50 --triton-name resnet50_load --device cpu
+```
+
 All models:
 
 ```bash
