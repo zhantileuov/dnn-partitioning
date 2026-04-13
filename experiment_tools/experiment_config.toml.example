@@ -1,0 +1,50 @@
+[experiment]
+name = "rl_partition_time_windows"
+scenario_duration_s = 25.0
+settle_before_s = 3.0
+settle_after_s = 2.0
+step_timeout_s = 60.0
+mode_stable_records = 3
+
+[kafka]
+bootstrap_servers = "172.22.229.75:9092"
+client_topic = "dnn_partition.metrics"
+server_topic = "dnn_partition.server_metrics"
+
+[client]
+control_host = "172.22.229.116"
+control_port = 5055
+model_name = "resnet18"
+
+[load]
+# This command runs on the same machine where you launch the experiment script.
+# Replace it with an ssh command if load should run on another machine.
+# Supported placeholders:
+#   {python} {server_url} {model_name} {load_rps} {workers} {processes}
+start_command = "\"{python}\" dnn_partition/controller/background_client.py --server-url {server_url} --model-name {model_name} --target-rps {load_rps} --workers {workers} --processes {processes}"
+server_url = "172.22.231.61:8001"
+workers = 4
+processes = 2
+
+[output]
+directory = "dnn_partition/experiment_tools/results"
+
+[[scenarios]]
+mode = "full_server"
+partition_point = ""
+load_rps_values = [0, 10, 50, 100, 140, 150, 155, 156, 160, 170]
+
+[[scenarios]]
+mode = "split"
+partition_point = "layer1.0"
+load_rps_values = [0, 10, 50, 100, 140, 150, 155, 156, 160, 170]
+
+[[scenarios]]
+mode = "split"
+partition_point = "layer1.1"
+load_rps_values = [0, 10, 50, 100, 140, 150, 155, 156, 160, 170]
+
+[[scenarios]]
+mode = "full_local"
+partition_point = ""
+load_rps_values = [0]
