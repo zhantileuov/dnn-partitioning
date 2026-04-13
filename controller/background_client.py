@@ -22,8 +22,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-name", default="resnet18_full", help="Triton model name.")
     parser.add_argument("--target-rps", type=float, default=5.0, help="Total target requests per second.")
     parser.add_argument("--workers", type=int, default=1, help="Number of worker threads per process.")
-    parser.add_argument("--shape", default="1,3,224,224", help="Input tensor shape, e.g. 1,3,224,224.")
-    parser.add_argument("--dtype", choices=["fp32", "fp16"], default="fp32", help="Input dtype.")
+    parser.add_argument("--shape", default=None, help="Optional input tensor shape, e.g. 1,3,224,224. Defaults to Triton model metadata.")
+    parser.add_argument("--dtype", choices=["fp32", "fp16"], default=None, help="Optional input dtype. Defaults to Triton model metadata.")
     parser.add_argument("--input-mode", choices=["zeros", "random"], default="random", help="Dummy input mode.")
     parser.add_argument("--timeout-s", type=float, default=30.0, help="Per-request Triton timeout.")
     parser.add_argument("--log-every", type=float, default=5.0, help="Print stats every N seconds.")
@@ -44,6 +44,52 @@ def parse_shape(text: str) -> tuple[int, ...]:
 
 def numpy_dtype(name: str):
     return np.float16 if name == "fp16" else np.float32
+
+
+def triton_to_local_dtype(name: str) -> str:
+    mapping = {
+        "FP16": "fp16",
+        "TYPE_FP16": "fp16",
+        "FP32": "fp32",
+        "TYPE_FP32": "fp32",
+    }
+    normalized = str(name or "").strip().upper()
+    if normalized not in mapping:
+        raise ValueError("Unsupported Triton datatype {0!r}. Use --dtype to override.".format(name))
+    return mapping[normalized]
+
+
+def sanitize_shape(shape) -> tuple[int, ...]:
+    dims = []
+    for dim in shape:
+        value = int(dim)
+        dims.append(1 if value <= 0 else value)
+    if not dims:
+        raise ValueError("Resolved Triton input shape is empty.")
+    return tuple(dims)
+
+
+def resolve_model_io(server_url: str, model_name: str, shape_override: Optional[str], dtype_override: Optional[str]):
+    if grpcclient is None:
+        raise RuntimeError("tritonclient.grpc is required to run background_client.py")
+
+    client = grpcclient.InferenceServerClient(url=server_url, verbose=False)
+    metadata = client.get_model_metadata(model_name=model_name)
+    if not metadata.inputs:
+        raise RuntimeError("Model {0} exposes no inputs in Triton metadata.".format(model_name))
+    if not metadata.outputs:
+        raise RuntimeError("Model {0} exposes no outputs in Triton metadata.".format(model_name))
+
+    input_meta = metadata.inputs[0]
+    output_meta = metadata.outputs[0]
+    input_shape = parse_shape(shape_override) if shape_override else sanitize_shape(input_meta.shape)
+    dtype_name = dtype_override or triton_to_local_dtype(getattr(input_meta, "datatype", None))
+    return {
+        "input_name": input_meta.name,
+        "output_name": output_meta.name,
+        "input_shape": input_shape,
+        "dtype_name": dtype_name,
+    }
 
 
 @dataclass
@@ -108,6 +154,8 @@ class BackgroundWorker(threading.Thread):
         timeout_s: float,
         stats: SharedStats,
         stop_event: threading.Event,
+        input_name: str,
+        output_name: str,
         max_requests: Optional[int] = None,
     ):
         super().__init__(name=f"background-worker-{worker_id}", daemon=True)
@@ -121,6 +169,8 @@ class BackgroundWorker(threading.Thread):
         self.timeout_s = timeout_s
         self.stats = stats
         self.stop_event = stop_event
+        self.input_name = input_name
+        self.output_name = output_name
         self.max_requests = max_requests
         self._sent_local = 0
         self._fixed_payload = self._make_payload() if input_mode == "zeros" else None
@@ -165,9 +215,9 @@ class BackgroundWorker(threading.Thread):
                 next_send += interval_s
 
             payload = self._fixed_payload if self._fixed_payload is not None else self._make_payload()
-            infer_input = grpcclient.InferInput("input", list(payload.shape), "FP16" if self.dtype == np.float16 else "FP32")
+            infer_input = grpcclient.InferInput(self.input_name, list(payload.shape), "FP16" if self.dtype == np.float16 else "FP32")
             infer_input.set_data_from_numpy(payload)
-            output = grpcclient.InferRequestedOutput("output")
+            output = grpcclient.InferRequestedOutput(self.output_name)
 
             sent_at = time.perf_counter()
             self.stats.mark_sent()
@@ -224,8 +274,10 @@ def run_single_process(args: argparse.Namespace) -> int:
     if args.workers <= 0:
         raise SystemExit("--workers must be > 0")
 
-    input_shape = parse_shape(args.shape)
-    dtype = numpy_dtype(args.dtype)
+    io = resolve_model_io(args.server_url, args.model_name, args.shape, args.dtype)
+    input_shape = io["input_shape"]
+    dtype_name = io["dtype_name"]
+    dtype = numpy_dtype(dtype_name)
     stats = SharedStats()
     stop_event = threading.Event()
     label = f"bgload-p{args.process_index}"
@@ -250,6 +302,8 @@ def run_single_process(args: argparse.Namespace) -> int:
             timeout_s=args.timeout_s,
             stats=stats,
             stop_event=stop_event,
+            input_name=io["input_name"],
+            output_name=io["output_name"],
             max_requests=worker_limits[index],
         )
         for index in range(args.workers)
@@ -264,7 +318,7 @@ def run_single_process(args: argparse.Namespace) -> int:
 
     print(
         f"[{label}] starting server={args.server_url} model={args.model_name} "
-        f"target_rps={args.target_rps:.2f} workers={args.workers} shape={input_shape} dtype={args.dtype}"
+        f"target_rps={args.target_rps:.2f} workers={args.workers} shape={input_shape} dtype={dtype_name}"
     )
     logger.start()
     for worker in workers:
@@ -305,10 +359,6 @@ def run_multi_process(args: argparse.Namespace) -> int:
             str(per_process_rps[index]),
             "--workers",
             str(args.workers),
-            "--shape",
-            args.shape,
-            "--dtype",
-            args.dtype,
             "--input-mode",
             args.input_mode,
             "--timeout-s",
@@ -319,6 +369,10 @@ def run_multi_process(args: argparse.Namespace) -> int:
             str(index),
             "--spawned-child",
         ]
+        if args.shape:
+            cmd.extend(["--shape", args.shape])
+        if args.dtype:
+            cmd.extend(["--dtype", args.dtype])
         if args.duration_s is not None:
             cmd.extend(["--duration-s", str(args.duration_s)])
         if per_process_limits[index] is not None:
