@@ -6,6 +6,7 @@ import torch
 
 from dnn_partition.common.partition_manager import PartitionManager
 from dnn_partition.common.torch_compat import inference_context
+from dnn_partition.server.stress_router.install import install_stress_router_model
 
 
 class TritonRepositoryBuilder:
@@ -114,12 +115,20 @@ instance_group [
             exported.extend(self.export_all(model_name, repo_dir, device=device))
         return exported
 
+    def install_stress_router(self, repo_dir: Union[str, Path]) -> Path:
+        return install_stress_router_model(repo_dir)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Export full and tail ONNX models for Triton.")
     parser.add_argument("--repo-dir", required=True, help="Output Triton model repository directory.")
     parser.add_argument("--model", default="all", help="Model name or 'all'.")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--include-stress-router",
+        action="store_true",
+        help="Also install the stress_router Python backend model into the target repository.",
+    )
     args = parser.parse_args()
 
     builder = TritonRepositoryBuilder()
@@ -127,6 +136,8 @@ def main() -> None:
         exported = builder.export_all_models(args.repo_dir, device=args.device)
     else:
         exported = builder.export_all(args.model, args.repo_dir, device=args.device)
+    if args.include_stress_router:
+        exported.append(builder.install_stress_router(args.repo_dir))
     for path in exported:
         print(path)
 

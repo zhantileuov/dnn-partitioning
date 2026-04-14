@@ -1,0 +1,23 @@
+name: "stress_router"
+backend: "python"
+max_batch_size: 0
+input [
+  {
+    name: "TARGET_MODEL_NAME"
+    data_type: TYPE_STRING
+    dims: [1]
+  }
+]
+output [
+  {
+    name: "STATUS"
+    data_type: TYPE_INT32
+    dims: [1]
+  }
+]
+instance_group [
+  {
+    kind: KIND_CPU
+    count: 1
+  }
+]

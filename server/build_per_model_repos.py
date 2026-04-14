@@ -22,6 +22,11 @@ def parse_args() -> argparse.Namespace:
         help="Optional subset of models to export. Defaults to all supported models.",
     )
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--include-stress-router",
+        action="store_true",
+        help="Also install the stress_router model into each generated repository.",
+    )
     return parser.parse_args()
 
 
@@ -35,6 +40,8 @@ def main() -> None:
     for model_name in models:
         repo_dir = repos_root / f"{model_name}_repo"
         exported = builder.export_all(model_name, repo_dir, device=args.device)
+        if args.include_stress_router:
+            exported.append(builder.install_stress_router(repo_dir))
         print(f"\n[{model_name}]")
         print(f"repo: {repo_dir}")
         for path in exported:
