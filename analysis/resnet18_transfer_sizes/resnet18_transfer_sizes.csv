@@ -1,0 +1,10 @@
+partition_point,tail_model_name,activation_shape,num_values,transfer_kb_fp32,transfer_kb_fp16
+stem,resnet18_tail_after_stem,1x64x56x56,200704,784.0,392.0
+layer1.0,resnet18_tail_after_layer1_0,1x64x56x56,200704,784.0,392.0
+layer1.1,resnet18_tail_after_layer1_1,1x64x56x56,200704,784.0,392.0
+layer2.0,resnet18_tail_after_layer2_0,1x128x28x28,100352,392.0,196.0
+layer2.1,resnet18_tail_after_layer2_1,1x128x28x28,100352,392.0,196.0
+layer3.0,resnet18_tail_after_layer3_0,1x256x14x14,50176,196.0,98.0
+layer3.1,resnet18_tail_after_layer3_1,1x256x14x14,50176,196.0,98.0
+layer4.0,resnet18_tail_after_layer4_0,1x512x7x7,25088,98.0,49.0
+layer4.1,resnet18_tail_after_layer4_1,1x512x7x7,25088,98.0,49.0

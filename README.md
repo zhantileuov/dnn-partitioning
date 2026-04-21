@@ -45,6 +45,18 @@ cd ~/dnn_partition/server
 docker compose up -d
 ```
 
+Server side, with `resnet50_full` included in the same model repository for
+background RPS load:
+
+```bash
+python3 -m dnn_partition.server.repository_builder \
+  --repo-dir ~/dnn_partition/server/dynamic_model_repo \
+  --model resnet18 \
+  --extra-full-model resnet50 \
+  --include-stress-router \
+  --device cpu
+```
+
 Client side:
 
 ```bash

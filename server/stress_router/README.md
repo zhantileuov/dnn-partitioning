@@ -45,6 +45,18 @@ python3 -m dnn_partition.server.repository_builder \
   --include-stress-router
 ```
 
+To build a partitioned repo and include ResNet-50 as a full-model RPS target
+in the same repository:
+
+```bash
+python3 -m dnn_partition.server.repository_builder \
+  --repo-dir ~/dnn_partition/server/dynamic_model_repo \
+  --model resnet18 \
+  --extra-full-model resnet50 \
+  --device cpu \
+  --include-stress-router
+```
+
 Or, if the repo already exists:
 
 ```bash
@@ -68,6 +80,17 @@ python controller/stress_router_client.py \
 ```
 
 This client sends only the target-model name to `stress_router`.
+
+For direct full-model background load against ResNet-50, use:
+
+```bash
+python controller/background_client.py \
+  --server-url 172.22.231.61:8001 \
+  --model-name resnet50_full \
+  --target-rps 20 \
+  --workers 4 \
+  --input-mode random
+```
 
 ## Verification
 

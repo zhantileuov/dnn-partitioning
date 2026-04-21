@@ -1,10 +1,13 @@
 import argparse
 import csv
 import json
+import os
 import shlex
+import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -67,6 +70,14 @@ def active_server_model_name(model_name: str, mode: str, partition_point: Option
     if mode == "split" and partition_point:
         return "{0}_tail_after_{1}".format(model_name, partition_point.replace(".", "_"))
     return ""
+
+
+class LoadProcessHandle:
+    def __init__(self, proc: subprocess.Popen):
+        self.proc = proc
+        self.ready_event = threading.Event()
+        self.ready_ts: Optional[float] = None
+        self.output_thread: Optional[threading.Thread] = None
 
 
 class ExperimentRunner:
@@ -188,7 +199,7 @@ class ExperimentRunner:
             "status": "running",
         }
 
-        load_proc = None
+        load_proc: Optional[LoadProcessHandle] = None
         try:
             event["mode_command_sent_ts"] = time.time()
             self._send_mode(mode, partition_point)
@@ -202,7 +213,7 @@ class ExperimentRunner:
             if load_rps > 0 and load_model_name:
                 event["load_command_sent_ts"] = time.time()
                 load_proc = self._start_load(load_rps, load_model_name)
-                event["load_confirmed_ts"] = self._wait_for_load_confirmation(load_model_name)
+                event["load_confirmed_ts"] = self._wait_for_load_confirmation(load_proc, load_model_name)
                 analysis_anchor = event["load_confirmed_ts"]
             else:
                 print("[experiment] no external load for this scenario")
@@ -232,6 +243,10 @@ class ExperimentRunner:
             if load_proc is not None:
                 self._stop_load(load_proc)
                 event["load_stop_ts"] = time.time()
+                cooldown_after_load_s = float(self.experiment_cfg.get("cooldown_after_load_s", 0.0))
+                if cooldown_after_load_s > 0:
+                    print("[experiment] cooling down after load for {0:.1f}s".format(cooldown_after_load_s))
+                    self._poll_until(time.time() + cooldown_after_load_s)
             elif load_rps <= 0:
                 event["load_stop_ts"] = event["analysis_end_ts"] or time.time()
 
@@ -259,7 +274,7 @@ class ExperimentRunner:
             )
         )
 
-    def _start_load(self, load_rps: float, load_model_name: str):
+    def _start_load(self, load_rps: float, load_model_name: str) -> LoadProcessHandle:
         command = self.load_cfg["start_command"].format(
             python=sys.executable,
             server_url=self.load_cfg["server_url"],
@@ -269,22 +284,55 @@ class ExperimentRunner:
             processes=self.load_cfg["processes"],
         )
         print("[experiment] starting load: {0}".format(command))
-        proc = subprocess.Popen(command, shell=True)
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        proc = subprocess.Popen(
+            shlex.split(command),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=env,
+            start_new_session=True,
+        )
+        handle = LoadProcessHandle(proc)
+        handle.output_thread = threading.Thread(
+            target=self._stream_load_output,
+            args=(handle,),
+            name="experiment-load-output",
+            daemon=True,
+        )
+        handle.output_thread.start()
         time.sleep(1.0)
         if proc.poll() is not None:
             raise RuntimeError("Load command exited immediately with code {0}".format(proc.returncode))
-        return proc
+        return handle
 
-    def _stop_load(self, proc) -> None:
+    def _stream_load_output(self, handle: LoadProcessHandle) -> None:
+        if handle.proc.stdout is None:
+            return
+        for raw_line in handle.proc.stdout:
+            line = raw_line.rstrip()
+            if line:
+                print(line)
+                if not handle.ready_event.is_set() and line.startswith("[bgload-"):
+                    handle.ready_ts = time.time()
+                    handle.ready_event.set()
+        handle.proc.stdout.close()
+
+    def _stop_load(self, handle: LoadProcessHandle) -> None:
+        proc = handle.proc
         if proc.poll() is not None:
             return
         print("[experiment] stopping load command")
-        proc.terminate()
+        os.killpg(proc.pid, signal.SIGTERM)
         try:
             proc.wait(timeout=5.0)
         except subprocess.TimeoutExpired:
-            proc.kill()
+            os.killpg(proc.pid, signal.SIGKILL)
             proc.wait(timeout=5.0)
+        if handle.output_thread is not None:
+            handle.output_thread.join(timeout=1.0)
 
     def _step_deadline(self):
         timeout_s = float(self.experiment_cfg.get("step_timeout_s", 0.0))
@@ -295,24 +343,37 @@ class ExperimentRunner:
     def _wait_for_mode_confirmation(self, mode: str, partition_point: Optional[str]) -> float:
         print("[experiment] waiting for mode confirmation")
         stable_needed = int(self.experiment_cfg.get("mode_stable_records", 3))
+        fallback_grace_s = float(self.experiment_cfg.get("mode_confirmation_fallback_s", 3.0))
         stable = 0
+        saw_client_record = False
+        saw_matching_record = False
         deadline = self._step_deadline()
+        started_at = time.time()
         while self._before_deadline(deadline):
             for item in self._poll_messages():
                 if item["kind"] != "client":
                     continue
+                saw_client_record = True
                 payload = item["data"]
                 if self._client_matches_mode(payload, mode, partition_point):
+                    saw_matching_record = True
                     stable += 1
                     if stable >= stable_needed:
                         print("[experiment] mode confirmed")
                         return float(payload.get("timestamp") or time.time())
                 else:
                     stable = 0
+            if not saw_client_record and time.time() - started_at >= fallback_grace_s:
+                print("[experiment] mode confirmation fallback: no fresh client metrics observed")
+                return time.time()
+            if saw_matching_record and time.time() - started_at >= fallback_grace_s:
+                print("[experiment] mode confirmation fallback: observed matching client metrics but not enough stable records")
+                return time.time()
         raise RuntimeError("Timed out waiting for client mode confirmation")
 
-    def _wait_for_load_confirmation(self, load_model_name: str) -> float:
+    def _wait_for_load_confirmation(self, load_handle: LoadProcessHandle, load_model_name: str) -> float:
         print("[experiment] waiting for load confirmation")
+        fallback_grace_s = float(self.experiment_cfg.get("load_confirmation_fallback_s", 3.0))
         deadline = self._step_deadline()
         while self._before_deadline(deadline):
             for item in self._poll_messages():
@@ -323,6 +384,16 @@ class ExperimentRunner:
                 if model_metrics and float(model_metrics.get("success_rps") or 0.0) > 0.0:
                     print("[experiment] load confirmed with success_rps={0:.2f}".format(float(model_metrics["success_rps"])))
                     return float(payload.get("timestamp") or time.time())
+            if load_handle.proc.poll() is not None:
+                raise RuntimeError("Load command exited unexpectedly with code {0}".format(load_handle.proc.returncode))
+            if load_handle.ready_event.is_set():
+                ready_ts = load_handle.ready_ts or time.time()
+                if time.time() - ready_ts >= fallback_grace_s:
+                    print(
+                        "[experiment] load confirmed from background client output; "
+                        "Kafka server confirmation not observed"
+                    )
+                    return ready_ts
         raise RuntimeError("Timed out waiting for server load confirmation for {0}".format(load_model_name))
 
     def _poll_until(self, end_time: float) -> None:

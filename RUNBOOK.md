@@ -130,6 +130,20 @@ One model:
 python3 -m dnn_partition.server.repository_builder --repo-dir ~/dnn_partition/server/dynamic_model_repo --model resnet18 --device cpu
 ```
 
+Partitioned model plus ResNet-50 full-model RPS target:
+
+```bash
+python3 -m dnn_partition.server.repository_builder \
+  --repo-dir ~/dnn_partition/server/dynamic_model_repo \
+  --model resnet18 \
+  --extra-full-model resnet50 \
+  --include-stress-router \
+  --device cpu
+```
+
+This creates the normal `resnet18_*` partitioned models, adds `resnet50_full`
+to the same Triton model repository, and installs `stress_router`.
+
 Standalone load model:
 
 ```bash

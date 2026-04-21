@@ -4,6 +4,7 @@ from typing import List, Optional, Union
 
 import torch
 
+from dnn_partition.common.naming import canonical_model_name
 from dnn_partition.common.partition_manager import PartitionManager
 from dnn_partition.common.torch_compat import inference_context
 from dnn_partition.server.stress_router.install import install_stress_router_model
@@ -129,13 +130,39 @@ def main() -> None:
         action="store_true",
         help="Also install the stress_router Python backend model into the target repository.",
     )
+    parser.add_argument(
+        "--extra-full-model",
+        action="append",
+        default=[],
+        metavar="MODEL",
+        help=(
+            "Also export a full-only model into the same repository, e.g. "
+            "--extra-full-model resnet50. May be repeated. Useful for a "
+            "background RPS target without exporting all of its partitions."
+        ),
+    )
     args = parser.parse_args()
 
     builder = TritonRepositoryBuilder()
     if args.model == "all":
         exported = builder.export_all_models(args.repo_dir, device=args.device)
+        primary_models = set(builder.partition_manager.list_models())
     else:
         exported = builder.export_all(args.model, args.repo_dir, device=args.device)
+        primary_models = {canonical_model_name(args.model)}
+
+    extra_full_models = []
+    for model_name in args.extra_full_model:
+        canonical_name = canonical_model_name(model_name)
+        if canonical_name in extra_full_models:
+            continue
+        extra_full_models.append(canonical_name)
+
+    for model_name in extra_full_models:
+        if args.model == "all" or model_name in primary_models:
+            continue
+        exported.append(builder.export_full(model_name, args.repo_dir, device=args.device))
+
     if args.include_stress_router:
         exported.append(builder.install_stress_router(args.repo_dir))
     for path in exported:

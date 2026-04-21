@@ -25,6 +25,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--shape", default=None, help="Optional input tensor shape, e.g. 1,3,224,224. Defaults to Triton model metadata.")
     parser.add_argument("--dtype", choices=["fp32", "fp16"], default=None, help="Optional input dtype. Defaults to Triton model metadata.")
     parser.add_argument("--input-mode", choices=["zeros", "random"], default="random", help="Dummy input mode.")
+    parser.add_argument(
+        "--cache-payload",
+        action="store_true",
+        help="Reuse one prebuilt payload per worker to reduce tensor-generation overhead.",
+    )
     parser.add_argument("--timeout-s", type=float, default=30.0, help="Per-request Triton timeout.")
     parser.add_argument("--log-every", type=float, default=5.0, help="Print stats every N seconds.")
     parser.add_argument("--duration-s", type=float, default=None, help="Optional total runtime in seconds.")
@@ -151,6 +156,7 @@ class BackgroundWorker(threading.Thread):
         input_shape: tuple[int, ...],
         dtype,
         input_mode: str,
+        cache_payload: bool,
         timeout_s: float,
         stats: SharedStats,
         stop_event: threading.Event,
@@ -166,6 +172,7 @@ class BackgroundWorker(threading.Thread):
         self.input_shape = input_shape
         self.dtype = dtype
         self.input_mode = input_mode
+        self.cache_payload = cache_payload
         self.timeout_s = timeout_s
         self.stats = stats
         self.stop_event = stop_event
@@ -173,7 +180,8 @@ class BackgroundWorker(threading.Thread):
         self.output_name = output_name
         self.max_requests = max_requests
         self._sent_local = 0
-        self._fixed_payload = self._make_payload() if input_mode == "zeros" else None
+        # Reusing a payload reduces per-request allocation/generation overhead.
+        self._fixed_payload = self._make_payload() if (input_mode == "zeros" or cache_payload) else None
 
     def _make_payload(self) -> np.ndarray:
         if self.input_mode == "zeros":
@@ -299,6 +307,7 @@ def run_single_process(args: argparse.Namespace) -> int:
             input_shape=input_shape,
             dtype=dtype,
             input_mode=args.input_mode,
+            cache_payload=args.cache_payload,
             timeout_s=args.timeout_s,
             stats=stats,
             stop_event=stop_event,
@@ -318,7 +327,8 @@ def run_single_process(args: argparse.Namespace) -> int:
 
     print(
         f"[{label}] starting server={args.server_url} model={args.model_name} "
-        f"target_rps={args.target_rps:.2f} workers={args.workers} shape={input_shape} dtype={dtype_name}"
+        f"target_rps={args.target_rps:.2f} workers={args.workers} shape={input_shape} "
+        f"dtype={dtype_name} cache_payload={args.cache_payload or args.input_mode == 'zeros'}"
     )
     logger.start()
     for worker in workers:
@@ -361,6 +371,7 @@ def run_multi_process(args: argparse.Namespace) -> int:
             str(args.workers),
             "--input-mode",
             args.input_mode,
+            "--cache-payload" if args.cache_payload else "",
             "--timeout-s",
             str(args.timeout_s),
             "--log-every",
@@ -369,6 +380,7 @@ def run_multi_process(args: argparse.Namespace) -> int:
             str(index),
             "--spawned-child",
         ]
+        cmd = [part for part in cmd if part != ""]
         if args.shape:
             cmd.extend(["--shape", args.shape])
         if args.dtype:

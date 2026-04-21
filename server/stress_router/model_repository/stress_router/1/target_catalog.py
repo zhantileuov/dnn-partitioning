@@ -5,6 +5,10 @@ import numpy as np
 # it avoids remote transfer of the large activation and lets us reuse one
 # cached tensor per target model on the Triton host.
 TARGET_MODEL_CATALOG = {
+    "resnet18_full": {
+        "shape": (1, 3, 224, 224),
+        "dtype": np.float32,
+    },
     "resnet18_tail_after_stem": {
         "shape": (1, 64, 56, 56),
         "dtype": np.float32,
@@ -39,6 +43,10 @@ TARGET_MODEL_CATALOG = {
     },
     "resnet18_tail_after_layer4_1": {
         "shape": (1, 512, 7, 7),
+        "dtype": np.float32,
+    },
+    "resnet50_full": {
+        "shape": (1, 3, 224, 224),
         "dtype": np.float32,
     },
     "resnet50_tail_after_stem": {
