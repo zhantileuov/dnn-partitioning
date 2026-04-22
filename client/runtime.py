@@ -65,12 +65,12 @@ class DynamicPartitionRuntime:
         try:
             while max_requests is None or processed < max_requests:
                 loop_start = time.perf_counter()
+                e2e_start = loop_start
                 read_start = time.perf_counter()
                 frame_id, frame = self.video_source.read()
                 frame_read_time = time.perf_counter() - read_start
                 plan = self.selector.next_plan(frame_id, last_metrics=last_metrics)
                 request_id = str(uuid.uuid4())
-                t0 = time.perf_counter()
 
                 preprocess_start = time.perf_counter()
                 x = self.local_executor.preprocess_frame(frame)
@@ -105,8 +105,9 @@ class DynamicPartitionRuntime:
                 else:
                     raise ValueError(f"Unsupported mode: {plan.mode}")
 
-                e2e_latency = time.perf_counter() - t0
+                e2e_latency = time.perf_counter() - e2e_start
                 telemetry = self.jetson_telemetry.get_latest()
+                loop_latency = time.perf_counter() - loop_start
                 metrics = RequestMetrics(
                     request_id=request_id,
                     timestamp=time.time(),
@@ -118,9 +119,9 @@ class DynamicPartitionRuntime:
                     transfer_time=transfer_time,
                     server_processing_time=server_processing_time,
                     e2e_latency=e2e_latency,
-                    loop_latency=None,
+                    loop_latency=loop_latency,
                     frame_read_time=frame_read_time,
-                    post_e2e_overhead=None,
+                    post_e2e_overhead=loop_latency - e2e_latency,
                     bytes_sent=bytes_sent,
                     bytes_received=bytes_received,
                     latest_sampled_power_w=telemetry.latest_sampled_power_w,
@@ -132,8 +133,6 @@ class DynamicPartitionRuntime:
                     jetson_sample_timestamp=telemetry.jetson_sample_timestamp,
                 )
                 self.metrics_logger.log(metrics)
-                metrics.loop_latency = time.perf_counter() - loop_start
-                metrics.post_e2e_overhead = metrics.loop_latency - metrics.e2e_latency
                 last_metrics = metrics
                 processed += 1
                 if self.print_every and processed % self.print_every == 0:
