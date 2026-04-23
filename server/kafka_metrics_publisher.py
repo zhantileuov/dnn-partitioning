@@ -76,8 +76,10 @@ def avg_duration_ms(current_sum: Optional[float], previous_sum: Optional[float],
 
 def read_jtop_server_metrics(jetson) -> dict:
     stats = getattr(jetson, "stats", {}) or {}
+    gpu = getattr(jetson, "gpu", {}) or {}
     temperature = getattr(jetson, "temperature", {}) or {}
     memory = getattr(jetson, "memory", {}) or {}
+    power = getattr(jetson, "power", {}) or {}
 
     gpu_util = _to_float(stats.get("GPU"))
     cpu_util = _avg_cpu_util(stats)
@@ -86,17 +88,27 @@ def read_jtop_server_metrics(jetson) -> dict:
     power_w = _milli_to_watts(stats.get("power cur"))
     power_avg_w = _milli_to_watts(stats.get("power avg"))
     gpu_mem_used_mb, gpu_mem_total_mb = _gpu_memory_from_jtop(memory)
+    gpu_freq_mhz = _gpu_frequency_mhz(gpu)
+    gpu_temp_c = _named_temperature_c(temperature, "gpu")
+    emc_util_percent = _emc_util_percent(memory)
+    emc_freq_mhz = _emc_frequency_mhz(memory)
+    vdd_in_power_mw = _total_power_mw(power)
 
     # Triton Prometheus already provides GPU memory bytes, so temperature/power come from jtop.
     return {
         "gpu_util_percent": gpu_util,
+        "gpu_freq_mhz": gpu_freq_mhz,
+        "gpu_temp_c": gpu_temp_c,
         "gpu_mem_used_mb": gpu_mem_used_mb,
         "gpu_mem_total_mb": gpu_mem_total_mb,
         "cpu_util_percent": cpu_util,
         "mem_util_percent": mem_util,
+        "emc_util_percent": emc_util_percent,
+        "emc_freq_mhz": emc_freq_mhz,
         "temperature_c": temperature_c,
         "power_w": power_w,
         "power_avg_w": power_avg_w,
+        "power_vdd_in_mw": vdd_in_power_mw,
     }
 
 
@@ -172,6 +184,83 @@ def _memory_value_to_mb(value) -> Optional[float]:
     if parsed > 4096:
         return parsed / 1024.0
     return parsed
+
+
+def _gpu_frequency_mhz(gpu: dict) -> Optional[float]:
+    if not isinstance(gpu, dict):
+        return None
+
+    for gpu_metrics in gpu.values():
+        if not isinstance(gpu_metrics, dict):
+            continue
+        freq = gpu_metrics.get("freq") or {}
+        parsed = _to_float(freq.get("cur"))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _named_temperature_c(temperature: dict, name_fragment: str) -> Optional[float]:
+    if not isinstance(temperature, dict):
+        return None
+
+    name_fragment = name_fragment.lower()
+    for sensor_name, sensor_metrics in temperature.items():
+        normalized_name = str(sensor_name).lower()
+        if name_fragment not in normalized_name:
+            continue
+        if isinstance(sensor_metrics, dict):
+            parsed = _to_float(sensor_metrics.get("temp"))
+        else:
+            parsed = _to_float(sensor_metrics)
+        if parsed is not None and parsed > -200:
+            return parsed
+    return None
+
+
+def _emc_util_percent(memory: dict) -> Optional[float]:
+    if not isinstance(memory, dict):
+        return None
+
+    emc = memory.get("EMC") or memory.get("emc") or {}
+    if not isinstance(emc, dict):
+        return None
+    return _to_float(emc.get("val"))
+
+
+def _emc_frequency_mhz(memory: dict) -> Optional[float]:
+    if not isinstance(memory, dict):
+        return None
+
+    emc = memory.get("EMC") or memory.get("emc") or {}
+    if not isinstance(emc, dict):
+        return None
+    return _to_float(emc.get("cur"))
+
+
+def _total_power_mw(power: dict) -> Optional[float]:
+    if not isinstance(power, dict):
+        return None
+
+    total = power.get("tot") or {}
+    if isinstance(total, dict):
+        parsed = _to_float(total.get("power"))
+        if parsed is not None:
+            return parsed
+
+    rails = power.get("rail") or {}
+    if not isinstance(rails, dict):
+        return None
+
+    preferred_names = ("VDD_IN", "POM_5V_IN")
+    for rail_name in preferred_names:
+        rail = rails.get(rail_name)
+        if not isinstance(rail, dict):
+            continue
+        parsed = _to_float(rail.get("power"))
+        if parsed is not None:
+            return parsed
+    return None
 
 
 def _to_float(value) -> Optional[float]:
@@ -287,6 +376,8 @@ def build_payload(
         "metrics_window_s": window_s,
         "server": {
             "gpu_util_percent": gpu_util_ratio * 100.0 if gpu_util_ratio is not None else system_metrics.get("gpu_util_percent"),
+            "gpu_freq_mhz": system_metrics.get("gpu_freq_mhz"),
+            "gpu_temp_c": system_metrics.get("gpu_temp_c"),
             "gpu_mem_used_mb": (
                 gpu_mem_used_bytes / (1024.0 * 1024.0)
                 if gpu_mem_used_bytes is not None
@@ -299,7 +390,12 @@ def build_payload(
             ),
             "cpu_util_percent": cpu_util_ratio * 100.0 if cpu_util_ratio is not None else system_metrics.get("cpu_util_percent"),
             "mem_util_percent": mem_util_percent,
+            "emc_util_percent": system_metrics.get("emc_util_percent"),
+            "emc_freq_mhz": system_metrics.get("emc_freq_mhz"),
             "temperature_c": system_metrics.get("temperature_c"),
+            "power_w": system_metrics.get("power_w"),
+            "power_avg_w": system_metrics.get("power_avg_w"),
+            "power_vdd_in_mw": system_metrics.get("power_vdd_in_mw"),
         },
         "totals": {
             "total_rps": total_success_rps + total_failure_rps,
