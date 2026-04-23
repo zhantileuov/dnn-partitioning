@@ -85,13 +85,15 @@ def read_jtop_server_metrics(jetson) -> dict:
     cpu_util = _avg_cpu_util(stats)
     mem_util = _memory_util_percent(stats)
     temperature_c = _avg_temperature_c(temperature if temperature else stats)
-    power_w = _milli_to_watts(stats.get("power cur"))
-    power_avg_w = _milli_to_watts(stats.get("power avg"))
+    power_w = _milliwatt_to_watts(_mapping_get(_mapping_get(power, "tot", {}), "power"))
+    power_avg_w = _milliwatt_to_watts(_mapping_get(_mapping_get(power, "tot", {}), "avg"))
+    if power_w is None:
+        power_w = _milliwatt_to_watts(stats.get("Power TOT"))
     gpu_mem_used_mb, gpu_mem_total_mb = _gpu_memory_from_jtop(memory)
-    gpu_freq_mhz = _gpu_frequency_mhz(gpu)
+    gpu_freq_mhz = _khz_to_mhz(_gpu_frequency_khz(gpu))
     gpu_temp_c = _named_temperature_c(temperature, "gpu")
-    emc_util_percent = _emc_util_percent(memory)
-    emc_freq_mhz = _emc_frequency_mhz(memory)
+    emc_util_percent = _emc_util_percent(memory, stats)
+    emc_freq_mhz = _khz_to_mhz(_emc_frequency_khz(memory))
     vdd_in_power_mw = _total_power_mw(power)
 
     # Triton Prometheus already provides GPU memory bytes, so temperature/power come from jtop.
@@ -152,21 +154,20 @@ def _memory_util_percent(stats: dict) -> Optional[float]:
 
 
 def _gpu_memory_from_jtop(memory: dict):
-    if not isinstance(memory, dict):
-        return None, None
-
     candidates = [
-        memory.get("GPU"),
-        memory.get("gpu"),
-        memory.get("RAM"),
-        memory.get("ram"),
+        _mapping_get(memory, "GPU"),
+        _mapping_get(memory, "gpu"),
+        _mapping_get(memory, "RAM"),
+        _mapping_get(memory, "ram"),
     ]
 
     for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        used_mb = _memory_value_to_mb(candidate.get("used") or candidate.get("use"))
-        total_mb = _memory_value_to_mb(candidate.get("tot") or candidate.get("total"))
+        used_mb = _memory_value_to_mb(
+            _mapping_get(candidate, "used")
+            or _mapping_get(candidate, "use")
+            or _mapping_get(candidate, "shared")
+        )
+        total_mb = _memory_value_to_mb(_mapping_get(candidate, "tot") or _mapping_get(candidate, "total"))
         if used_mb is not None or total_mb is not None:
             return used_mb, total_mb
 
@@ -186,81 +187,85 @@ def _memory_value_to_mb(value) -> Optional[float]:
     return parsed
 
 
-def _gpu_frequency_mhz(gpu: dict) -> Optional[float]:
-    if not isinstance(gpu, dict):
-        return None
-
-    for gpu_metrics in gpu.values():
-        if not isinstance(gpu_metrics, dict):
-            continue
-        freq = gpu_metrics.get("freq") or {}
-        parsed = _to_float(freq.get("cur"))
+def _gpu_frequency_khz(gpu) -> Optional[float]:
+    for gpu_metrics in _mapping_values(gpu):
+        freq = _mapping_get(gpu_metrics, "freq", {})
+        parsed = _to_float(_mapping_get(freq, "cur"))
         if parsed is not None:
             return parsed
     return None
 
 
-def _named_temperature_c(temperature: dict, name_fragment: str) -> Optional[float]:
-    if not isinstance(temperature, dict):
-        return None
-
+def _named_temperature_c(temperature, name_fragment: str) -> Optional[float]:
     name_fragment = name_fragment.lower()
-    for sensor_name, sensor_metrics in temperature.items():
+    for sensor_name, sensor_metrics in _mapping_items(temperature):
         normalized_name = str(sensor_name).lower()
         if name_fragment not in normalized_name:
             continue
-        if isinstance(sensor_metrics, dict):
-            parsed = _to_float(sensor_metrics.get("temp"))
-        else:
-            parsed = _to_float(sensor_metrics)
+        parsed = _to_float(_mapping_get(sensor_metrics, "temp", sensor_metrics))
         if parsed is not None and parsed > -200:
             return parsed
     return None
 
 
-def _emc_util_percent(memory: dict) -> Optional[float]:
-    if not isinstance(memory, dict):
-        return None
-
-    emc = memory.get("EMC") or memory.get("emc") or {}
-    if not isinstance(emc, dict):
-        return None
-    return _to_float(emc.get("val"))
+def _emc_util_percent(memory, stats: dict) -> Optional[float]:
+    emc = _mapping_get(memory, "EMC") or _mapping_get(memory, "emc") or {}
+    parsed = _to_float(_mapping_get(emc, "val"))
+    if parsed is not None:
+        return parsed
+    return _to_float(stats.get("EMC"))
 
 
-def _emc_frequency_mhz(memory: dict) -> Optional[float]:
-    if not isinstance(memory, dict):
-        return None
-
-    emc = memory.get("EMC") or memory.get("emc") or {}
-    if not isinstance(emc, dict):
-        return None
-    return _to_float(emc.get("cur"))
+def _emc_frequency_khz(memory) -> Optional[float]:
+    emc = _mapping_get(memory, "EMC") or _mapping_get(memory, "emc") or {}
+    return _to_float(_mapping_get(emc, "cur"))
 
 
-def _total_power_mw(power: dict) -> Optional[float]:
-    if not isinstance(power, dict):
-        return None
+def _total_power_mw(power) -> Optional[float]:
+    total = _mapping_get(power, "tot") or {}
+    parsed = _to_float(_mapping_get(total, "power"))
+    if parsed is not None:
+        return parsed
 
-    total = power.get("tot") or {}
-    if isinstance(total, dict):
-        parsed = _to_float(total.get("power"))
-        if parsed is not None:
-            return parsed
-
-    rails = power.get("rail") or {}
-    if not isinstance(rails, dict):
-        return None
+    rails = _mapping_get(power, "rail") or {}
 
     preferred_names = ("VDD_IN", "POM_5V_IN")
     for rail_name in preferred_names:
-        rail = rails.get(rail_name)
-        if not isinstance(rail, dict):
-            continue
-        parsed = _to_float(rail.get("power"))
+        rail = _mapping_get(rails, rail_name)
+        parsed = _to_float(_mapping_get(rail, "power"))
         if parsed is not None:
             return parsed
     return None
+
+
+def _mapping_get(container, key, default=None):
+    if container is None:
+        return default
+    getter = getattr(container, "get", None)
+    if callable(getter):
+        return getter(key, default)
+    try:
+        return container[key]
+    except (KeyError, TypeError, IndexError):
+        return default
+
+
+def _mapping_items(container):
+    if container is None:
+        return []
+    items = getattr(container, "items", None)
+    if callable(items):
+        return items()
+    return []
+
+
+def _mapping_values(container):
+    if container is None:
+        return []
+    values = getattr(container, "values", None)
+    if callable(values):
+        return values()
+    return []
 
 
 def _to_float(value) -> Optional[float]:
@@ -277,6 +282,20 @@ def _milli_to_watts(value) -> Optional[float]:
     if parsed is None:
         return None
     return parsed / 1000.0
+
+
+def _milliwatt_to_watts(value) -> Optional[float]:
+    parsed = _to_float(value)
+    if parsed is None:
+        return None
+    return parsed / 1000.0
+
+
+def _khz_to_mhz(value) -> Optional[float]:
+    parsed = _to_float(value)
+    if parsed is None:
+        return None
+    return parsed / 1000.0 if parsed > 10000 else parsed
 
 
 def build_payload(
