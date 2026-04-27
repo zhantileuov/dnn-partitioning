@@ -1,0 +1,7 @@
+instance_group,max_throughput_inf_s,avg_throughput_inf_s,concurrency_at_max_throughput,client_avg_latency_ms_at_max_throughput,client_p95_latency_ms_at_max_throughput,server_queue_ms_at_max_throughput,server_compute_infer_ms_at_max_throughput,throughput_per_instance_at_max_throughput,min_client_avg_latency_ms,concurrency_at_min_latency
+1,78.0689,75.48835384615384,3,37.961,39.573,16.766,12.349,78.0689,19.363,1
+3,80.432,74.53348461538461,3,36.759,47.772,0.103,25.509,26.810666666666666,19.116,1
+5,80.0802,63.534807692307695,3,36.967,48.13,0.092,25.899,16.01604,20.269,1
+7,79.9041,61.74836153846154,3,36.903,48.465,0.084,25.515,11.414871428571429,20.582,1
+9,80.4034,62.76387692307693,3,36.833,50.157,0.099,25.081,8.933711111111112,19.365,1
+11,80.1238,61.759676923076924,3,36.892,48.592,0.078,25.399,7.283981818181818,20.363,1

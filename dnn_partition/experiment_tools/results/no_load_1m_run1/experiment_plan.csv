@@ -1,0 +1,2 @@
+experiment_id,scenario_id,mode,partition_point,load_model_name,active_server_model_name,load_rps_target,duration_s
+no_load_1m_run1,1,full_server,,resnet50_full,resnet50_full,0.0,60.0

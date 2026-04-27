@@ -32,6 +32,9 @@ directory = "dnn_partition/experiment_tools/results"
 [[scenarios]]
 mode = "full_server"
 partition_point = ""
+# Optional override for the background load model. If omitted, it follows the
+# active scenario model naming, e.g. "<client.model_name>_full".
+# load_model_name = "resnet50_full"
 load_rps_values = [0, 10, 50, 100, 140, 150, 155, 156, 160, 170]
 
 [[scenarios]]

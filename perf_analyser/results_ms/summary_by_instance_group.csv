@@ -1,0 +1,7 @@
+instance_group,max_throughput_inf_s,concurrency_at_max_throughput,min_client_avg_latency_ms,concurrency_at_min_latency,client_avg_latency_ms_at_max_throughput,server_queue_ms_at_max_throughput,compute_infer_ms_at_max_throughput
+1,78.0689,3,19.363,1,37.961,16.766,12.349
+3,80.432,3,19.116,1,36.759,0.103,25.509
+5,80.0802,3,20.269,1,36.967,0.092,25.899
+7,79.9041,3,20.582,1,36.903,0.084,25.515
+9,80.4034,3,19.365,1,36.833,0.099,25.081
+11,80.1238,3,20.363,1,36.892,0.078,25.399

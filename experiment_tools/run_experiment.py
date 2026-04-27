@@ -140,6 +140,9 @@ class ExperimentRunner:
         for scenario in self.config["scenarios"]:
             mode = scenario["mode"]
             partition_point = scenario.get("partition_point") or ""
+            load_model_name = scenario.get("load_model_name")
+            if load_model_name is None or str(load_model_name).strip() == "":
+                load_model_name = scenario_load_model_name(model_name, mode, partition_point or None)
             for load_rps in scenario["load_rps_values"]:
                 scenario_id += 1
                 self.plan_rows.append(
@@ -148,7 +151,7 @@ class ExperimentRunner:
                         "scenario_id": scenario_id,
                         "mode": mode,
                         "partition_point": partition_point,
-                        "load_model_name": scenario_load_model_name(model_name, mode, partition_point or None),
+                        "load_model_name": load_model_name,
                         "active_server_model_name": active_server_model_name(model_name, mode, partition_point or None),
                         "load_rps_target": float(load_rps),
                         "duration_s": duration_s,
@@ -497,11 +500,18 @@ class ExperimentRunner:
                         "server_timestamp": server_payload.get("timestamp") if server_payload else None,
                         "server_id": server_payload.get("server_id") if server_payload else None,
                         "server_gpu_util_percent": self._nested(server_payload, "server", "gpu_util_percent"),
+                        "server_gpu_freq_mhz": self._nested(server_payload, "server", "gpu_freq_mhz"),
+                        "server_gpu_temp_c": self._nested(server_payload, "server", "gpu_temp_c"),
                         "server_gpu_mem_used_mb": self._nested(server_payload, "server", "gpu_mem_used_mb"),
                         "server_gpu_mem_total_mb": self._nested(server_payload, "server", "gpu_mem_total_mb"),
                         "server_cpu_util_percent": self._nested(server_payload, "server", "cpu_util_percent"),
                         "server_mem_util_percent": self._nested(server_payload, "server", "mem_util_percent"),
+                        "server_emc_util_percent": self._nested(server_payload, "server", "emc_util_percent"),
+                        "server_emc_freq_mhz": self._nested(server_payload, "server", "emc_freq_mhz"),
                         "server_temperature_c": self._nested(server_payload, "server", "temperature_c"),
+                        "server_power_w": self._nested(server_payload, "server", "power_w"),
+                        "server_power_avg_w": self._nested(server_payload, "server", "power_avg_w"),
+                        "server_power_vdd_in_mw": self._nested(server_payload, "server", "power_vdd_in_mw"),
                         "server_total_rps": self._nested(server_payload, "totals", "total_rps"),
                         "server_total_success_rps": self._nested(server_payload, "totals", "total_success_rps"),
                         "server_total_failure_rps": self._nested(server_payload, "totals", "total_failure_rps"),

@@ -1,0 +1,2 @@
+experiment_id,scenario_id,mode,partition_point,load_model_name,load_rps_target,duration_s,mode_command_sent_ts,mode_confirmed_ts,load_command_sent_ts,load_confirmed_ts,load_stop_ts,analysis_start_ts,analysis_end_ts,status
+no_load_1m_run1,1,full_server,,resnet50_full,0.0,60.0,1776987251.965071,1776987252.0551958,,,1776987317.2178926,1776987257.2178926,1776987317.2178926,completed
