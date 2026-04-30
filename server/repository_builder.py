@@ -14,9 +14,15 @@ class TritonRepositoryBuilder:
     def __init__(self, partition_manager=None):
         self.partition_manager = partition_manager or PartitionManager()
 
-    def export_onnx(self, model: torch.nn.Module, sample: torch.Tensor, out_path: Path) -> None:
+    def export_onnx(self, model: torch.nn.Module, sample: torch.Tensor, out_path: Path, enable_batching: bool = False) -> None:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         model.eval()
+        dynamic_axes = None
+        if enable_batching:
+            dynamic_axes = {
+                "input": {0: "batch"},
+                "output": {0: "batch"},
+            }
         with inference_context():
             torch.onnx.export(
                 model.cpu(),
@@ -27,13 +33,32 @@ class TritonRepositoryBuilder:
                 do_constant_folding=True,
                 input_names=["input"],
                 output_names=["output"],
-                dynamic_axes=None,
+                dynamic_axes=dynamic_axes,
             )
 
-    def write_config(self, model_dir: Path, model_name: str, input_shape: tuple, output_shape: tuple) -> None:
+    def write_config(
+        self,
+        model_dir: Path,
+        model_name: str,
+        input_shape: tuple,
+        output_shape: tuple,
+        max_batch_size: int = 0,
+    ) -> None:
+        if max_batch_size < 0:
+            raise ValueError("max_batch_size must be >= 0")
+        if max_batch_size > 0:
+            input_shape = input_shape[1:]
+            output_shape = output_shape[1:]
+            batching_config = '''dynamic_batching {
+  preferred_batch_size: [2, 4, 8]
+  max_queue_delay_microseconds: 1000
+}
+'''
+        else:
+            batching_config = ""
         cfg = f'''name: "{model_name}"
 platform: "onnxruntime_onnx"
-max_batch_size: 0
+max_batch_size: {max_batch_size}
 input [
   {{
     name: "input"
@@ -54,10 +79,18 @@ instance_group [
     count: 1
   }}
 ]
+{batching_config}
 '''
         (model_dir / "config.pbtxt").write_text(cfg, encoding="utf-8")
 
-    def export_full(self, model_name: str, repo_dir: Union[str, Path], checkpoint_path: Optional[Union[str, Path]] = None, device: str = "cpu") -> Path:
+    def export_full(
+        self,
+        model_name: str,
+        repo_dir: Union[str, Path],
+        checkpoint_path: Optional[Union[str, Path]] = None,
+        device: str = "cpu",
+        max_batch_size: int = 0,
+    ) -> Path:
         repo_dir = Path(repo_dir)
         full_model = self.partition_manager.build_full(model_name, checkpoint_path=checkpoint_path, device=device)
         x = torch.zeros((1, 3, 224, 224), device=device)
@@ -65,8 +98,8 @@ instance_group [
             y = full_model(x)
         triton_name = self.partition_manager.triton_full_name(model_name)
         model_dir = repo_dir / triton_name / "1"
-        self.export_onnx(full_model, x, model_dir / "model.onnx")
-        self.write_config(model_dir.parent, triton_name, tuple(x.shape), tuple(y.shape))
+        self.export_onnx(full_model, x, model_dir / "model.onnx", enable_batching=max_batch_size > 0)
+        self.write_config(model_dir.parent, triton_name, tuple(x.shape), tuple(y.shape), max_batch_size=max_batch_size)
         return model_dir.parent
 
     def export_tail(
@@ -76,6 +109,7 @@ instance_group [
         repo_dir: Union[str, Path],
         checkpoint_path: Optional[Union[str, Path]] = None,
         device: str = "cpu",
+        max_batch_size: int = 0,
     ) -> Path:
         repo_dir = Path(repo_dir)
         prefix = self.partition_manager.build_prefix(model_name, partition_point, checkpoint_path=checkpoint_path, device=device)
@@ -86,8 +120,14 @@ instance_group [
             y = tail(activation)
         triton_name = self.partition_manager.triton_tail_name(model_name, partition_point)
         model_dir = repo_dir / triton_name / "1"
-        self.export_onnx(tail, activation, model_dir / "model.onnx")
-        self.write_config(model_dir.parent, triton_name, tuple(activation.shape), tuple(y.shape))
+        self.export_onnx(tail, activation, model_dir / "model.onnx", enable_batching=max_batch_size > 0)
+        self.write_config(
+            model_dir.parent,
+            triton_name,
+            tuple(activation.shape),
+            tuple(y.shape),
+            max_batch_size=max_batch_size,
+        )
         return model_dir.parent
 
     def export_all(
@@ -96,8 +136,17 @@ instance_group [
         repo_dir: Union[str, Path],
         checkpoint_path: Optional[Union[str, Path]] = None,
         device: str = "cpu",
+        max_batch_size: int = 0,
     ) -> List[Path]:
-        exported = [self.export_full(model_name, repo_dir, checkpoint_path=checkpoint_path, device=device)]
+        exported = [
+            self.export_full(
+                model_name,
+                repo_dir,
+                checkpoint_path=checkpoint_path,
+                device=device,
+                max_batch_size=max_batch_size,
+            )
+        ]
         for partition_point in self.partition_manager.list_partition_points(model_name):
             exported.append(
                 self.export_tail(
@@ -106,14 +155,15 @@ instance_group [
                     repo_dir,
                     checkpoint_path=checkpoint_path,
                     device=device,
+                    max_batch_size=max_batch_size,
                 )
             )
         return exported
 
-    def export_all_models(self, repo_dir: Union[str, Path], device: str = "cpu") -> List[Path]:
+    def export_all_models(self, repo_dir: Union[str, Path], device: str = "cpu", max_batch_size: int = 0) -> List[Path]:
         exported = []
         for model_name in self.partition_manager.list_models():
-            exported.extend(self.export_all(model_name, repo_dir, device=device))
+            exported.extend(self.export_all(model_name, repo_dir, device=device, max_batch_size=max_batch_size))
         return exported
 
     def install_stress_router(self, repo_dir: Union[str, Path]) -> Path:
@@ -125,6 +175,12 @@ def main() -> None:
     parser.add_argument("--repo-dir", required=True, help="Output Triton model repository directory.")
     parser.add_argument("--model", default="all", help="Model name or 'all'.")
     parser.add_argument("--device", default="cpu")
+    parser.add_argument(
+        "--max-batch-size",
+        type=int,
+        default=0,
+        help="Enable Triton/ONNX batching with this max batch size. Default 0 disables batching.",
+    )
     parser.add_argument(
         "--include-stress-router",
         action="store_true",
@@ -145,10 +201,10 @@ def main() -> None:
 
     builder = TritonRepositoryBuilder()
     if args.model == "all":
-        exported = builder.export_all_models(args.repo_dir, device=args.device)
+        exported = builder.export_all_models(args.repo_dir, device=args.device, max_batch_size=args.max_batch_size)
         primary_models = set(builder.partition_manager.list_models())
     else:
-        exported = builder.export_all(args.model, args.repo_dir, device=args.device)
+        exported = builder.export_all(args.model, args.repo_dir, device=args.device, max_batch_size=args.max_batch_size)
         primary_models = {canonical_model_name(args.model)}
 
     extra_full_models = []
@@ -161,7 +217,7 @@ def main() -> None:
     for model_name in extra_full_models:
         if args.model == "all" or model_name in primary_models:
             continue
-        exported.append(builder.export_full(model_name, args.repo_dir, device=args.device))
+        exported.append(builder.export_full(model_name, args.repo_dir, device=args.device, max_batch_size=args.max_batch_size))
 
     if args.include_stress_router:
         exported.append(builder.install_stress_router(args.repo_dir))
